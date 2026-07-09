@@ -1411,1515 +1411,587 @@ def _finding_text(finding):
     return str(finding)
 
 def _build_html_report(report_data):
-    """Genera un report HTML tipo dashboard SaaS con todos los datos recopilados."""
+    """Generate a professional HTML report for the collected scan evidence."""
     scan_data = report_data.get("scan_data", {}) or {}
     findings = report_data.get("findings", []) or []
     general = scan_data.get("general", {}) or {}
+    headers = general.get("headers") or {}
     technologies = general.get("technologies", []) or []
-    auth = scan_data.get("authentication", {}) or {}
     nmap_data = scan_data.get("nmap", {}) or {}
     nmap_ports = nmap_data.get("ports", []) or []
-    nmap_nse = nmap_data.get("nse_results", []) or []
     nuclei_findings = scan_data.get("nuclei_findings", []) or []
-    nuclei_summary = scan_data.get("nuclei_summary", {}) or {}
-    vhosts = scan_data.get("vhosts", []) or []
-    directories = scan_data.get("directory_hits", []) or []
+    spider = scan_data.get("spider", {}) or {}
+    src_code = scan_data.get("source_code_analysis", {}) or {}
+    src_findings = src_code.get("findings", []) or []
+    robots_paths = scan_data.get("robots_paths", []) or []
+    http_methods = scan_data.get("http_methods", []) or []
     api_endpoints = scan_data.get("api_endpoints", []) or []
+    directory_hits = scan_data.get("directory_hits", []) or []
+    vhosts = scan_data.get("vhosts", []) or []
     users = scan_data.get("users", []) or []
     emails = scan_data.get("emails", []) or []
     creds = scan_data.get("bruteforce_credentials", []) or []
     wordpress = scan_data.get("wordpress", {}) or {}
-    spider = scan_data.get("spider", {}) or {}
-    src_code = scan_data.get("source_code_analysis", {}) or {}
-    src_findings = src_code.get("findings", []) or []
     active_directory = scan_data.get("active_directory", {}) or {}
-    stats = scan_data.get("stats", {}) or {}
-    robots_paths = scan_data.get("robots_paths", []) or []
-    http_methods = scan_data.get("http_methods", []) or []
-    injection = scan_data.get("injection", {}) or {}
-    adv_sec = scan_data.get("advanced_security", {}) or {}
-    adv_ssrf = adv_sec.get("ssrf") or []
-    adv_ssti = adv_sec.get("ssti") or []
-    adv_xxe = adv_sec.get("xxe") or []
-    adv_crlf = adv_sec.get("crlf") or []
-    adv_smuggling = adv_sec.get("smuggling") or []
-    adv_cache = adv_sec.get("cache_poisoning") or []
-    adv_total = len(adv_ssrf) + len(adv_ssti) + len(adv_xxe) + len(adv_crlf) + len(adv_smuggling) + len(adv_cache)
+    required_headers = [
+        "Strict-Transport-Security",
+        "Content-Security-Policy",
+        "X-Frame-Options",
+        "X-Content-Type-Options",
+        "Referrer-Policy",
+        "Permissions-Policy",
+    ]
+    missing_headers = [h for h in required_headers if not (headers.get(h) or headers.get(h.lower()))]
 
-    def esc(value):
-        return _html_escape(value if value is not None else "")
+    def _normalize_severity(value):
+        text = (value or "info").strip().lower()
+        return text if text in {"critical", "high", "medium", "low", "info"} else "info"
 
-    def badge(value, tone="neutral"):
-        text = esc(value if value not in (None, "") else "-")
-        return f"<span class='badge badge-{tone}'>{text}</span>"
+    def _severity_label(value):
+        return {
+            "critical": "Critical",
+            "high": "High",
+            "medium": "Medium",
+            "low": "Low",
+            "info": "Informational",
+        }.get(_normalize_severity(value), "Informational")
 
-    def status_badge(value):
-        text = str(value if value is not None else "-")
-        tone = "neutral"
-        if text.startswith("2") or text.lower() in ("open", "ok", "true", "si", "yes"):
-            tone = "good"
-        elif text.startswith("3") or "medium" in text.lower():
-            tone = "info"
-        elif text.startswith("4") or "low" in text.lower():
-            tone = "warn"
-        elif text.startswith("5") or any(x in text.lower() for x in ("critical", "high", "vulnerable")):
-            tone = "bad"
-        return badge(text, tone)
+    def _escape_text(value):
+        return html.escape(str(value if value is not None else ""), quote=True)
 
-    def table(headers, rows, empty="No data.", raw_cols=None, row_attrs=None):
-        raw_cols = set(raw_cols or [])
+    def _build_table(headers, rows):
         if not rows:
-            return (
-                "<div class='table-wrap'><table><thead><tr>"
-                + "".join(f"<th>{esc(h)}</th>" for h in headers)
-                + "</tr></thead><tbody>"
-                + f"<tr><td colspan='{len(headers)}' class='empty'>{esc(empty)}</td></tr>"
-                + "</tbody></table></div>"
-            )
-        body = []
-        for i, row in enumerate(rows):
-            cells = []
-            for idx, cell in enumerate(row):
-                if idx in raw_cols:
-                    cells.append(f"<td>{cell}</td>")
-                else:
-                    cells.append(f"<td>{esc(cell)}</td>")
-            attr = ""
-            if row_attrs and i < len(row_attrs) and row_attrs[i]:
-                attr = " " + " ".join(f'{k}="{v}"' for k, v in row_attrs[i].items())
-            body.append(f"<tr{attr}>" + "".join(cells) + "</tr>")
-        return (
-            "<div class='table-wrap'><table><thead><tr>"
-            + "".join(f"<th>{esc(h)}</th>" for h in headers)
-            + "</tr></thead><tbody>"
-            + "".join(body)
-            + "</tbody></table></div>"
-        )
+            return "<table><thead><tr>" + "".join(f"<th>{_escape_text(h)}</th>" for h in headers) + "</tr></thead><tbody><tr><td colspan='" + str(len(headers)) + "' class='muted'>No data available.</td></tr></tbody></table>"
+        rows_html = []
+        for row in rows:
+            cells = "".join(f"<td>{_escape_text(cell)}</td>" for cell in row)
+            rows_html.append("<tr>" + cells + "</tr>")
+        return "<table><thead><tr>" + "".join(f"<th>{_escape_text(h)}</th>" for h in headers) + "</tr></thead><tbody>" + "".join(rows_html) + "</tbody></table>"
 
-    def section(sec_id, title, content):
-        return f"<section id='{sec_id}' class='section'><div class='section-head'><h2>{esc(title)}</h2></div>{content}</section>"
-
-    def compact_list(items):
-        if not items:
-            return "<span class='muted'>No data</span>"
-        return "<div class='chips'>" + "".join(f"<span class='chip'>{esc(i)}</span>" for i in items) + "</div>"
-
-    def nmap_version(p):
-        parts = [p.get("product", ""), p.get("version", ""), p.get("extrainfo", "")]
-        return " ".join(x for x in parts if x).strip() or "-"
-
-    sev_rank = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4, "unknown": 5}
-    sev_tone = {"critical": "bad", "high": "bad", "medium": "warn", "low": "info", "info": "neutral", "unknown": "neutral"}
-    ad_ldap = active_directory.get("ldap") or {}
-    ad_nxc = active_directory.get("nxc") or {}
-    ad_imp = active_directory.get("impacket") or {}
-    asrep_hashes = (ad_imp.get("asrep_roast") or {}).get("hashes", []) or []
-    kerberoast_hashes = (ad_imp.get("kerberoast") or {}).get("hashes", []) or []
-    ad_creds = ((ad_nxc.get("bruteforce") or {}).get("credentials", []) or [])
-
-    # Conteo de severidad combinado (Nuclei + codigo fuente) para el summary visual
-    _sev_known = {"critical", "high", "medium", "low", "info"}
     sev_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0}
-    for n in nuclei_findings:
-        s = (n.get("severity") or "info").lower()
-        s = s if s in _sev_known else "info"
-        sev_counts[s] += 1
-    for f in src_findings:
-        s = (f.get("severity") or "low").lower()
-        s = s if s in _sev_known else "low"
-        sev_counts[s] += 1
-    sev_total = sum(sev_counts.values())
-    risk_score = sev_counts["critical"] * 10 + sev_counts["high"] * 5 + sev_counts["medium"] * 2 + sev_counts["low"]
-    if sev_counts["critical"]:
-        risk_label, risk_tone = "CRITICAL", "bad"
-    elif sev_counts["high"]:
-        risk_label, risk_tone = "HIGH", "bad"
-    elif sev_counts["medium"]:
-        risk_label, risk_tone = "MEDIUM", "warn"
-    elif sev_counts["low"] or sev_total:
-        risk_label, risk_tone = "LOW", "info"
-    else:
-        risk_label, risk_tone = "CLEAN", "good"
-
-    kpis = [
-        ("Findings", len(findings), "bad" if findings else "neutral", "warning-octagon", "findings"),
-        ("Ports", len(nmap_ports), "info", "network", "nmap"),
-        ("NSE", len(nmap_nse), "warn" if nmap_nse else "neutral", "scan", "nmap"),
-        ("Nuclei", len(nuclei_findings), "bad" if nuclei_findings else "neutral", "bug-beetle", "nuclei"),
-        ("Technologies", len(technologies), "good" if technologies else "neutral", "stack", "info"),
-        ("API Endpoints", len(api_endpoints), "info", "brackets-curly", "api"),
-        ("Directories", len(directories), "info", "folders", "directories"),
-        ("Users", len(users), "neutral", "users-three", "info"),
-        ("Credentials", len(creds), "bad" if creds else "neutral", "key", "credentials"),
-        ("AD users", len(ad_ldap.get("users") or []), "info", "tree-structure", "ad"),
-        ("AS-REP", len(asrep_hashes), "bad" if asrep_hashes else "neutral", "fingerprint", "ad"),
-        ("Kerberoast", len(kerberoast_hashes), "bad" if kerberoast_hashes else "neutral", "fire", "ad"),
-        ("Adv. Security", adv_total, "bad" if adv_total else "neutral", "shield-warning", "advanced"),
-    ]
-    # Ordenar el summary por criticidad: critico/alto -> medio -> info -> ok
-    tone_rank = {"bad": 0, "warn": 1, "info": 2, "good": 3, "neutral": 4}
-    kpis_shown = sorted((k for k in kpis if k[1]), key=lambda k: tone_rank.get(k[2], 9))
-    kpi_html = "<div class='kpis'>" + "".join(
-        f"<a class='metric metric-{tone}' href='#{target}'><span><i class='ph ph-{icon}'></i>{esc(label)}</span><strong>{esc(value)}</strong></a>"
-        for label, value, tone, icon, target in kpis_shown
-    ) + "</div>"
-
-    tech_rows = []
-    for item in technologies:
-        if isinstance(item, dict):
-            tech_rows.append([item.get("name", "-"), item.get("detail", "-"), general.get("technologies_source", "-")])
-        else:
-            tech_rows.append([str(item), "-", general.get("technologies_source", "-")])
-
-    header_rows = [[k, v] for k, v in (general.get("headers") or {}).items()]
-    cookie_rows = [[c] for c in (general.get("cookies") or [])]
-    auth_rows = [[
-        "Status", status_badge("Authenticated" if auth.get("authenticated") else "Unauthenticated")
-    ], [
-        "Method", esc(auth.get("method", "-"))
-    ], [
-        "Login URL", esc(auth.get("login_url", "-"))
-    ], [
-        "User", esc(auth.get("username", "-"))
-    ], [
-        "Cookies", esc(", ".join(auth.get("cookie_names") or []) or "-")
-    ], [
-        "Authorization", esc("Yes" if auth.get("authorization_header") else "No")
-    ]]
-
-    overview_content = (
-        kpi_html
-        + "<div class='grid two'>"
-        + "<div class='panel'><h3>Target</h3>"
-        + table(["Field", "Value"], [
-            ["URL", report_data.get("target", "-")],
-            ["Date", report_data.get("date", "-")],
-            ["Version", report_data.get("tool", "-")],
-            ["HTTP status", general.get("status_code", "-")],
-            ["Server", general.get("server", "-")],
-        ])
-        + "</div>"
-        + "<div class='panel'><h3>Authentication</h3>"
-        + table(["Field", "Value"], auth_rows, raw_cols={1})
-        + "</div></div>"
-    )
-
-    def _norm_ident(s):
-        return re.sub(r"[^a-z0-9]", "", str(s).lower())
-
-    def users_emails_block(users, emails):
-        # Correlaciona email <-> user por la parte local del correo
-        pairs, matched_u, matched_e = [], set(), set()
-        for u in users:
-            un = _norm_ident(u)
-            for e in emails:
-                local = _norm_ident(str(e).split("@", 1)[0])
-                if un and local and (un == local or (len(un) >= 3 and (un in local or local in un))):
-                    pairs.append((u, e)); matched_u.add(u); matched_e.add(e)
-        if pairs:
-            rows = [[f"<code>{esc(u)}</code>", f"<code>{esc(e)}</code>"] for u, e in pairs]
-            rows += [[f"<code>{esc(u)}</code>", "<span class='muted'>-</span>"] for u in users if u not in matched_u]
-            rows += [["<span class='muted'>-</span>", f"<code>{esc(e)}</code>"] for e in emails if e not in matched_e]
-            return "<h4>User &harr; email</h4>" + table(["User", "Email"], rows, raw_cols={0, 1})
-        return "<h4>Users</h4>" + compact_list(users) + "<h4>Emails</h4>" + compact_list(emails)
-
-    info_content = (
-        "<div class='grid two'>"
-        + "<div class='panel'><h3>WhatWeb / Technologies</h3>"
-        + table(["Technology", "Detail", "Source"], tech_rows, "No technologies were detected.")
-        + "</div>"
-        + "<div class='panel'><h3>Users and emails</h3>"
-        + users_emails_block(users, emails)
-        + "</div></div>"
-        + "<div class='panel'><h3>HTTP Headers</h3>"
-        + table(["Header", "Value"], header_rows, "No headers recorded.")
-        + "</div>"
-        + "<div class='panel'><h3>Cookies</h3>"
-        + table(["Cookie"], cookie_rows, "No cookies recorded.")
-        + "</div>"
-    )
-
-    nmap_rows = [[
-        f"{p.get('port', '-')}/{p.get('protocol', '')}",
-        status_badge(p.get("state", "-")),
-        p.get("service", "-"),
-        nmap_version(p),
-        len(p.get("scripts") or []),
-    ] for p in nmap_ports if isinstance(p, dict)]
-    nse_rows = [[
-        f"{item.get('port', '-')}/{item.get('protocol', '')}",
-        item.get("service", "-"),
-        item.get("script_id", "-"),
-        status_badge("interesting" if item.get("interesting") else "info"),
-        item.get("output", "-"),
-    ] for item in nmap_nse]
-    nmap_content = (
-        "<div class='panel'><h3>Open Ports</h3>"
-        + f"<p class='muted'>Initial command: <code>{esc(nmap_data.get('command', 'nmap -sV'))}</code></p>"
-        + table(["Port", "Status", "Service", "Version", "Scripts"], nmap_rows, raw_cols={1})
-        + "</div><div class='panel'><h3>Targeted NSE</h3>"
-        + f"<p class='muted'>NSE command: <code>{esc((nmap_data.get('nse') or {}).get('command', '-'))}</code></p>"
-        + table(["Port", "Service", "Script", "Type", "Output"], nse_rows, "No output NSE.", raw_cols={3})
-        + "</div>"
-    )
-
-    grouped = {}
     for item in findings:
-        text = _finding_text(item)
-        m = re.match(r'^\[([^\]]+)\]\s*(.*)', text)
-        key = m.group(1) if m else "OTHER"
-        msg = m.group(2) if m else text
-        grouped.setdefault(key, []).append(msg)
-    finding_rows = [[cat, len(items), "<br>".join(esc(i) for i in items)] for cat, items in sorted(grouped.items())]
-    findings_content = "<div class='panel'>" + table(["Category", "Total", "Detail"], finding_rows, "No findings.", raw_cols={2}) + "</div>"
-
-    nuclei_summary_rows = [[sev.upper(), status_badge(sev.upper()), len(tids), ", ".join(sorted(set(map(str, tids))))] for sev, tids in sorted(nuclei_summary.items(), key=lambda x: sev_rank.get(x[0], 99))]
-    _nuclei_sorted = sorted(nuclei_findings, key=lambda x: (sev_rank.get((x.get("severity") or "unknown"), 99), x.get("template_id", "")))
-    nuclei_rows = [[
-        status_badge((n.get("severity") or "unknown").upper()),
-        n.get("template_id", "-"),
-        n.get("name", "-"),
-        n.get("url", "-"),
-        ", ".join(n.get("tags") or []) if isinstance(n.get("tags"), list) else n.get("tags", "-"),
-    ] for n in _nuclei_sorted]
-    nuclei_row_attrs = [{"data-sev": (n.get("severity") or "info").lower()} for n in _nuclei_sorted]
-    nuclei_content = (
-        "<div class='panel'><h3>Severity Summary</h3>"
-        + table(["Severity", "Status", "Total", "Templates"], nuclei_summary_rows, "No summary Nuclei.", raw_cols={1})
-        + "</div><div class='panel'><h3>Findings</h3>"
-        + table(["Severity", "Template", "Name", "URL", "Tags"], nuclei_rows, "No findings Nuclei.", raw_cols={0}, row_attrs=nuclei_row_attrs)
-        + "</div>"
-    )
-
-    api_content = "<div class='panel'>" + table(
-        ["Status", "Endpoint", "URL", "Content-Type"],
-        [[status_badge(ep.get("status", "-")), ep.get("endpoint", "-"), ep.get("url", "-"), ep.get("content_type", "-")] for ep in api_endpoints],
-        "No API endpoints.",
-        raw_cols={0},
-    ) + "</div>"
-    vhost_content = "<div class='panel'>" + table(
-        ["Status", "VHost", "Size"],
-        [[status_badge(v.get("status", "-")), v.get("fqdn") or v.get("subdomain", "-"), v.get("size", "-")] for v in vhosts if isinstance(v, dict)],
-        "No vhosts.",
-        raw_cols={0},
-    ) + "</div>"
-    dir_content = "<div class='panel'>" + table(
-        ["Status", "URL", "Size"],
-        [[status_badge(h.get("status", "-")), h.get("url", "-"), h.get("size", "-")] for h in directories if isinstance(h, dict)],
-        "No directories.",
-        raw_cols={0},
-    ) + "</div>"
-
-    wp_rows = []
-    if wordpress:
-        wp_rows = [
-            ["Detected", "Yes" if wordpress.get("detected") else "Not confirmed"],
-            ["Version", (wordpress.get("version") or {}).get("number", "-")],
-            ["Theme", (wordpress.get("main_theme") or {}).get("name", "-")],
-            ["Plugins", len(wordpress.get("plugins") or [])],
-            ["Users", len(wordpress.get("users") or [])],
-            ["Vulnerabilities", len(wordpress.get("vulnerabilities") or [])],
-            ["Credentials", len(wordpress.get("credentials") or [])],
-        ]
-    wp_user_rows = [[u.get("username", "-"), u.get("name", "-"), u.get("found_by", "-")] for u in (wordpress.get("users") or []) if isinstance(u, dict)]
-    wp_vuln_rows = [[v.get("component_type", "-"), v.get("component", "-"), v.get("title", "-"), v.get("fixed_in", "-")] for v in (wordpress.get("vulnerabilities") or []) if isinstance(v, dict)]
-    wp_content = (
-        "<div class='panel'><h3>Summary</h3>" + table(["Field", "Value"], wp_rows, "WordPress not run.") + "</div>"
-        + "<div class='panel'><h3>Users</h3>" + table(["User", "Name", "Source"], wp_user_rows, "No WordPress users.") + "</div>"
-        + "<div class='panel'><h3>Vulnerabilities</h3>" + table(["Type", "Component", "Title", "Fixed in"], wp_vuln_rows, "No WordPress vulnerabilities.") + "</div>"
-    )
-
-    spider_content = (
-        "<div class='grid two'><div class='panel'><h3>Summary</h3>"
-        + table(["Metric", "Value"], [
-            ["URLs", spider.get("total_urls", 0)],
-            ["Parameters", spider.get("total_params", 0)],
-            ["Forms", spider.get("total_forms", 0)],
-        ])
-        + "</div><div class='panel'><h3>Parameters</h3>"
-        + compact_list(spider.get("sample_params") or [])
-        + "</div></div><div class='panel'><h3>URLs</h3>"
-        + table(["URL"], [[u] for u in (spider.get("sample_urls") or [])], "No spider URLs.")
-        + "</div>"
-    )
-
-    _src_sorted = sorted(src_findings, key=lambda x: sev_rank.get((x.get("severity") or "low").lower(), 99))
-    src_rows = [[
-        status_badge((f.get("severity") or "-").upper()),
-        f.get("type", "-"),
-        f.get("value", "-"),
-        f.get("url", "-"),
-        f.get("snippet", "-"),
-    ] for f in _src_sorted]
-    src_row_attrs = [{"data-sev": (f.get("severity") or "low").lower()} for f in _src_sorted]
-    source_content = (
-        "<div class='panel'><h3>Summary</h3>"
-        + table(["Metric", "Value"], [
-            ["Pages analyzed", src_code.get("pages_analyzed", 0)],
-            ["Resources analyzed", src_code.get("assets_analyzed", 0)],
-            ["Findings", len(src_findings)],
-            ["Critical", (src_code.get("summary") or {}).get("critical", 0)],
-            ["High", (src_code.get("summary") or {}).get("high", 0)],
-            ["Medium", (src_code.get("summary") or {}).get("medium", 0)],
-            ["Low", (src_code.get("summary") or {}).get("low", 0)],
-        ])
-        + "</div><div class='panel'><h3>Detail</h3>"
-        + table(["Severity", "Type", "Value", "URL", "Context"], src_rows, "No source code findings.", raw_cols={0}, row_attrs=src_row_attrs)
-        + "</div>"
-    )
-
-    ad_summary = []
-    if active_directory:
-        ad_summary = [
-            ["Domain Controller", active_directory.get("target", "-")],
-            ["Domain", active_directory.get("domain", "-")],
-            ["Base DN", active_directory.get("base_dn", "-")],
-            ["Mode", active_directory.get("auth_mode", "-")],
-            ["Kerbrute users", len((active_directory.get("kerbrute") or {}).get("valid_users") or [])],
-            ["LDAP users", len(ad_ldap.get("users") or [])],
-            ["LDAP groups", len(ad_ldap.get("groups") or [])],
-            ["LDAP computers", len(ad_ldap.get("computers") or [])],
-            ["AS-REP roastable", len(asrep_hashes)],
-            ["Kerberoastable SPNs", len(kerberoast_hashes)],
-            ["NXC credentials", len(ad_creds)],
-        ]
-    ad_content = (
-        "<div class='panel'><h3>Summary AD</h3>" + table(["Field", "Value"], ad_summary, "AD module not run.") + "</div>"
-        + "<div class='panel'><h3>Valid Kerbrute users</h3>"
-        + table(["User"], [[u] for u in ((active_directory.get("kerbrute") or {}).get("valid_users") or [])], "No users Kerbrute.")
-        + "</div><div class='panel'><h3>LDAP users</h3>"
-        + table(["User", "UPN", "CN", "Groups"], [[u.get("username", "-"), u.get("upn", "-"), u.get("cn", "-"), ", ".join(u.get("memberOf") or [])] for u in (ad_ldap.get("users") or [])], "No LDAP users.")
-        + "</div><div class='panel'><h3>LDAP groups</h3>"
-        + table(["Group", "Description", "Members"], [[g.get("name", "-"), g.get("description", "-"), len(g.get("members") or [])] for g in (ad_ldap.get("groups") or [])], "No LDAP groups.")
-        + "</div><div class='panel'><h3>LDAP computers</h3>"
-        + table(["Computer", "SO", "Version"], [[c.get("name", "-"), c.get("os", "-"), c.get("os_version", "-")] for c in (ad_ldap.get("computers") or [])], "No LDAP computers.")
-        + "</div><div class='panel'><h3>AS-REP Roasting</h3>"
-        + table(["User", "Hash"], [[h.get("username", "-"), h.get("hash", "-")] for h in asrep_hashes], "No hashes AS-REP.")
-        + "</div><div class='panel'><h3>Kerberoasting</h3>"
-        + table(["User/SPN", "Hash"], [[h.get("username", "-"), h.get("hash", "-")] for h in kerberoast_hashes], "No hashes Kerberoast.")
-        + "</div><div class='panel'><h3>NXC credentials</h3>"
-        + table(["User", "Password"], [[c.get("username", "-"), c.get("password", "-")] for c in ad_creds], "No NXC credentials.")
-        + "</div>"
-    )
-    ad_raw = active_directory.get("raw_commands") or []
-    if ad_raw:
-        ad_content += "<div class='panel'><h3>AD Tool Output</h3>" + "".join(
-            f"<details><summary>{esc(cmd.get('label', 'command'))}</summary><p class='muted'><code>{esc(cmd.get('command', '-'))}</code></p><pre>{esc(cmd.get('output', '') or '-')}</pre></details>"
-            for cmd in ad_raw
-        ) + "</div>"
-
-    creds_content = "<div class='panel'>" + table(
-        ["User", "Password"],
-        [[c.get("username", "-"), c.get("password", "-")] for c in creds if isinstance(c, dict)],
-        "No valid web credentials.",
-    ) + "</div>"
-    # Exposed surface: robots.txt, HTTP methods, injection tests
-    inj_get = injection.get("tested_get_params") or []
-    inj_forms = injection.get("tested_form_inputs") or []
-    inj_form_rows = [[
-        fi.get("form_action", "-") if isinstance(fi, dict) else "-",
-        fi.get("input", fi) if isinstance(fi, dict) else fi,
-        fi.get("method", "-") if isinstance(fi, dict) else "-",
-    ] for fi in inj_forms]
-    exposure_content = (
-        "<div class='grid two'>"
-        + "<div class='panel'><h3>Paths in robots.txt</h3>"
-        + table(["Path"], [[p] for p in robots_paths], "No paths in robots.txt.")
-        + "</div><div class='panel'><h3>Allowed HTTP Methods</h3>"
-        + (compact_list(sorted(http_methods)) if http_methods else "<span class='muted'>No methods detected (OPTIONS).</span>")
-        + "</div></div>"
-        + "<div class='panel'><h3>Injection tests</h3>"
-        + "<h4>Tested GET Parameters</h4>" + (compact_list(inj_get) if inj_get else "<span class='muted'>No GET parameters tested.</span>")
-        + "<h4>Tested Form Inputs</h4>"
-        + table(["Form action", "Input", "Method"], inj_form_rows, "No form inputs tested.")
-        + "</div>"
-    )
-
-    adv_ssrf_rows = [[
-        r.get("type", "ssrf"), r.get("param") or r.get("header") or "-",
-        (r.get("payload") or r.get("value") or "")[:80], str(r.get("status", "-")),
-    ] for r in adv_ssrf]
-    adv_ssti_rows = [[r.get("url", "-")[:80], r.get("param", "-"), r.get("engine", "-")] for r in adv_ssti]
-    adv_xxe_rows = [[r.get("url", "-")[:80], r.get("content_type", "-"), r.get("note", "confirmed")] for r in adv_xxe]
-    adv_crlf_rows = [[r.get("vector", "-"), (r.get("param") or r.get("url") or "-")[:60], r.get("payload", "-")[:50]] for r in adv_crlf]
-    adv_smuggling_rows = [[(r.get("tool") or r.get("type") or "-"), (r.get("note") or r.get("output_snippet") or "-")[:80]] for r in adv_smuggling]
-    adv_cache_rows = [[r.get("header", "-"), r.get("value", "-")[:50], "Confirmed" if r.get("confirmed") else "Reflected"] for r in adv_cache]
-    adv_summary_rows = [
-        ["SSRF", str(len(adv_ssrf))],
-        ["SSTI", str(len(adv_ssti))],
-        ["XXE", str(len(adv_xxe))],
-        ["CRLF", str(len(adv_crlf))],
-        ["HTTP Smuggling", str(len(adv_smuggling))],
-        ["Cache Poisoning", str(len(adv_cache))],
-    ]
-    adv_content = (
-        "<div class='panel'><h3>Summary</h3>"
-        + table(["Module", "Findings"], adv_summary_rows, "No advanced tests run.")
-        + "</div>"
-        + "<div class='panel'><h3>SSRF</h3>"
-        + table(["Type", "Vector", "Payload/Value", "HTTP"], adv_ssrf_rows, "No findings SSRF.")
-        + "</div>"
-        + "<div class='panel'><h3>SSTI</h3>"
-        + table(["URL", "Parameter", "Engine"], adv_ssti_rows, "No findings SSTI.")
-        + "</div>"
-        + "<div class='panel'><h3>XXE</h3>"
-        + table(["URL", "Content-Type", "Status"], adv_xxe_rows, "No findings XXE.")
-        + "</div>"
-        + "<div class='panel'><h3>CRLF Injection</h3>"
-        + table(["Vector", "URL/Param", "Payload"], adv_crlf_rows, "No findings CRLF.")
-        + "</div>"
-        + "<div class='panel'><h3>HTTP Request Smuggling</h3>"
-        + table(["Tool/Type", "Detail"], adv_smuggling_rows, "No findings Smuggling.")
-        + "</div>"
-        + "<div class='panel'><h3>Cache Poisoning</h3>"
-        + table(["Header", "Injected value", "Status"], adv_cache_rows, "No findings Cache Poisoning.")
-        + "</div>"
-    )
-
-    raw_content = (
-        "<div class='panel'><h3>Statistics</h3><pre>"
-        + esc(json.dumps(stats, indent=2, ensure_ascii=False))
-        + "</pre></div><div class='panel'><h3>Full JSON</h3><pre>"
-        + esc(json.dumps(scan_data, indent=2, ensure_ascii=False))
-        + "</pre></div>"
-    )
-
-    # Presencia: solo se muestran las sectiones con informacion recopilada.
-    present = {
-        "summary": True,
-        "info": bool(technologies or users or emails or general.get("headers") or general.get("cookies") or general.get("server")),
-        "nmap": bool(nmap_ports or nmap_nse),
-        "findings": bool(findings),
-        "nuclei": bool(nuclei_findings or nuclei_summary),
-        "api": bool(api_endpoints),
-        "vhosts": bool(vhosts),
-        "directories": bool(directories),
-        "exposure": bool(robots_paths or http_methods or inj_get or inj_forms),
-        "advanced": bool(adv_sec),
-        "wordpress": bool(wordpress),
-        "spider": bool(spider.get("total_urls") or spider.get("sample_urls")),
-        "source": bool(src_code.get("pages_analyzed") or src_findings),
-        "ad": bool(active_directory),
-        "credentials": bool(creds),
-        "raw": bool(scan_data or stats),
-    }
-    all_sections = [
-        ("summary", "Summary", overview_content, None),
-        ("info", "General Information", info_content, len(technologies)),
-        ("nmap", "Nmap and NSE", nmap_content, len(nmap_ports)),
-        ("findings", "Findings", findings_content, len(findings)),
-        ("nuclei", "Nuclei", nuclei_content, len(nuclei_findings)),
-        ("api", "API", api_content, len(api_endpoints)),
-        ("vhosts", "VHosts", vhost_content, len(vhosts)),
-        ("directories", "Directories", dir_content, len(directories)),
-        ("exposure", "Exposed Surface", exposure_content, len(robots_paths) + len(http_methods)),
-        ("advanced", "Advanced Tests", adv_content, adv_total),
-        ("wordpress", "WordPress", wp_content, len(wordpress.get("vulnerabilities") or [])),
-        ("spider", "Spidering", spider_content, spider.get("total_urls", 0)),
-        ("source", "Source Code", source_content, len(src_findings)),
-        ("ad", "Active Directory", ad_content, len(ad_ldap.get("users") or [])),
-        ("credentials", "Web Credentials", creds_content, len(creds)),
-        ("raw", "Full Data", raw_content, None),
-    ]
-    sections = [s for s in all_sections if present.get(s[0])]
-
-    SEC_ICON = {
-        "summary": "gauge", "info": "info", "nmap": "network", "findings": "warning-octagon",
-        "nuclei": "bug-beetle", "api": "brackets-curly", "vhosts": "globe-hemisphere-west",
-        "directories": "folders", "exposure": "eye", "advanced": "shield-warning", "wordpress": "wordpress-logo",
-        "spider": "share-network", "source": "code", "ad": "tree-structure",
-        "credentials": "key", "raw": "database",
-    }
-    # Phosphor no incluye el logo de WordPress: se inyecta el SVG oficial.
-    WP_PATH = ("M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zM1.211 12c0-1.564.336-3.049.935-4.39"
-               "l5.151 14.114C3.694 19.962 1.211 16.271 1.211 12zm10.789 10.789c-1.06 0-2.082-.155-3.048-.439l3.237-9.406 "
-               "3.315 9.087c.022.053.048.101.078.149-1.12.393-2.325.609-3.582.609zm1.487-15.864c.65-.034 1.235-.103 1.235-.103"
-               ".582-.069.514-.922-.069-.888 0 0-1.749.137-2.877.137-1.061 0-2.844-.137-2.844-.137-.583-.034-.651.853-.069.888"
-               " 0 0 .551.069 1.132.103l1.681 4.604-2.361 7.078-3.926-11.682c.65-.034 1.235-.103 1.235-.103.582-.069.513-.922"
-               "-.069-.888 0 0-1.748.137-2.876.137-.202 0-.441-.005-.695-.013C4.911 3.193 8.235 1.211 12 1.211c2.804 0 5.357 "
-               "1.072 7.273 2.829-.046-.003-.092-.009-.139-.009-1.061 0-1.814.925-1.814 1.919 0 .893.515 1.648 1.061 2.541.41."
-               "723.889 1.648.889 2.986 0 .926-.355 2.001-.822 3.498l-1.078 3.599-3.906-11.621zm5.16 14.583l3.297-9.532c.615-1."
-               "538.82-2.769.82-3.862 0-.396-.026-.764-.073-1.106.838 1.531 1.316 3.288 1.316 5.156 0 3.965-2.15 7.426-5.348 "
-               "9.293z")
-
-    def sec_icon_html(sid, cls):
-        if sid == "wordpress":
-            return (f"<svg class='{cls}' viewBox='0 0 24 24' width='1em' height='1em' fill='currentColor' "
-                    f"aria-hidden='true'><path d='{WP_PATH}'/></svg>")
-        return f"<i class='ph ph-{SEC_ICON.get(sid, 'circle')} {cls}'></i>"
-
-    def nav_link(idx, sid, title, count):
-        cnt = "" if count in (None, 0) else f"<span class='ncount'>{esc(count)}</span>"
-        return (
-            f"<a href='#{sid}' data-target='{sid}' title='{esc(title)}'>"
-            f"{sec_icon_html(sid, 'nicon')}"
-            f"<span class='ntext'>{esc(title)}</span>{cnt}</a>"
-        )
-
-    nav = "<nav class='side-nav'>" + "".join(
-        nav_link(i + 1, sid, title, count) for i, (sid, title, _c, count) in enumerate(sections)
-    ) + "</nav>"
-
-    def section_block(sid, title, count, content):
-        cnt = "" if count in (None,) else f"<span class='count'>{esc(count)}</span>"
-        return (
-            f"<section id='{sid}' class='section'>"
-            f"<div class='section-head'>{sec_icon_html(sid, 'shic')}<h2>{esc(title)}</h2>{cnt}"
-            f"<a class='toplink' href='#top' title='Volver arriba'><i class='ph ph-arrow-up'></i></a></div>"
-            f"{content}</section>"
-        )
-
-    section_html = "".join(section_block(sid, title, count, content) for sid, title, content, count in sections)
-
-    # Barra de filtros: criticidad + tipo de section
-    _sev_filter_items = [
-        ("critical", "Critical", "c-crit"),
-        ("high", "High", "c-high"),
-        ("medium", "Medium", "c-med"),
-        ("low", "Low", "c-low"),
-        ("info", "Info", "c-info"),
-    ]
-    sev_chips = "".join(
-        f"<button class='fchip fchip-{key}' data-filter-sev='{key}'>"
-        f"{label} <b>{sev_counts.get(key, 0)}</b></button>"
-        for key, label, _ in _sev_filter_items
-        if sev_counts.get(key, 0) > 0
-    )
-    sec_chips = "".join(
-        f"<button class='fchip' data-filter-sec='{sid}'>{sec_icon_html(sid, 'nicon')} {esc(title)}</button>"
-        for sid, title, _, count in sections
-        if sid not in ("summary", "raw")
-    )
-    filter_html = (
-        "<div class='filter-bar' id='filterBar'>"
-        "<div class='filter-group'>"
-        "<span class='filter-lbl'><i class='ph ph-funnel'></i> Severity</span>"
-        "<div class='filter-chips'>"
-        "<button class='fchip active' data-filter-sev='all'>All</button>"
-        f"{sev_chips}</div></div>"
-        + (
-            "<div class='filter-group'>"
-            "<span class='filter-lbl'><i class='ph ph-squares-four'></i> Section</span>"
-            "<div class='filter-chips'>"
-            "<button class='fchip active' data-filter-sec='all'>All</button>"
-            f"{sec_chips}</div></div>"
-            if sec_chips else ""
-        )
-        + "</div>"
-    ) if (sev_chips or sec_chips) else ""
-
-    # Donut de severidad (conic-gradient) calculado en servidor
-    sev_palette = [
-        ("critical", "var(--c-crit)"), ("high", "var(--c-high)"), ("medium", "var(--c-med)"),
-        ("low", "var(--c-low)"), ("info", "var(--c-info)"),
-    ]
-    if sev_total:
-        acc = 0.0
-        stops = []
-        for key_, col in sev_palette:
-            c = sev_counts.get(key_, 0)
-            if not c:
-                continue
-            start = acc / sev_total * 360
-            acc += c
-            end = acc / sev_total * 360
-            stops.append(f"{col} {start:.2f}deg {end:.2f}deg")
-        donut_gradient = ", ".join(stops)
+        sev = _normalize_severity((item.get("severity") if isinstance(item, dict) else None) or "info")
+        sev_counts[sev] += 1
+    for item in nuclei_findings:
+        sev = _normalize_severity(item.get("severity") or "info")
+        sev_counts[sev] += 1
+    for item in src_findings:
+        sev = _normalize_severity(item.get("severity") or "low")
+        sev_counts[sev] += 1
+    if sev_counts["critical"] or sev_counts["high"]:
+        overall_risk = "High"
+        overall_risk_text = "The evidence indicates material exposure that should be remediated promptly."
+    elif sev_counts["medium"]:
+        overall_risk = "Medium"
+        overall_risk_text = "The exposure is moderate and should be addressed in the near term."
     else:
-        donut_gradient = "var(--green) 0deg 360deg"
-    legend = "".join(
-        f"<span class='leg'><i style='background:{col}'></i>{esc(key_.capitalize())}<b>{sev_counts.get(key_, 0)}</b></span>"
-        for key_, col in sev_palette
-    )
-    risk_html = (
-        "<div class='riskcard'>"
-        f"<div class='donut' style='background:conic-gradient({donut_gradient})'>"
-        f"<div class='donut-hole'><span>RIESGO</span><strong class='risk-{risk_tone}'>{esc(risk_label)}</strong>"
-        f"<small>score {esc(risk_score)}</small></div></div>"
-        f"<div class='legend'>{legend}</div></div>"
-    )
+        overall_risk = "Low"
+        overall_risk_text = "The observed findings are mostly informational or low-risk hardening items."
 
-    template = """<!doctype html>
-<html lang="es">
+    auth_status = "Authenticated assessment" if AUTHENTICATED else "Unauthenticated assessment"
+    auth_note = "This report documents an authorized security assessment for the stated target."
+    scope_items = [
+        f"Target: {report_data.get('target', '-')}",
+        f"Assessment time: {report_data.get('date', '-')}",
+        f"Assessment type: {auth_status}",
+        f"HTTP status: {general.get('status_code', '-')}",
+        f"Observed technologies: {', '.join(str(t.get('name', t)) for t in technologies if isinstance(t, dict)) or 'None recorded'}",
+    ]
+
+    findings_rows = []
+    for item in findings:
+        if isinstance(item, dict):
+            severity = _severity_label(item.get("severity") or "info")
+            title = item.get("name") or "Finding"
+            detail = item.get("detail") or ""
+        else:
+            severity = "Informational"
+            title = str(item)
+            detail = ""
+        findings_rows.append([severity, title, detail])
+    if nuclei_findings:
+        info_count = sum(1 for n in nuclei_findings if _normalize_severity(n.get("severity") or "info") == "info")
+        if info_count:
+            findings_rows.append(["Informational", "Informational exposure / technology discovery", f"{info_count} Nuclei informational findings were grouped as technology discovery and exposure observations."])
+        for n in nuclei_findings:
+            if _normalize_severity(n.get("severity") or "info") != "info":
+                findings_rows.append([_severity_label(n.get("severity") or "info"), n.get("name") or n.get("template_id") or "Nuclei finding", n.get("url") or ""])
+    if missing_headers:
+        severity = "Low" if not any(sev_counts[k] for k in ("critical", "high", "medium")) else "Medium"
+        findings_rows.append([severity, "Security header hardening opportunity", f"The response did not include: {', '.join(missing_headers)}. These are treated as hardening recommendations unless higher-severity evidence is present."])
+
+    remediation_items = []
+    if missing_headers:
+        remediation_items.append("Implement the missing security headers with values appropriate for the application and deployment context.")
+    if sev_counts["critical"] or sev_counts["high"]:
+        remediation_items.append("Prioritize the highest-severity findings for remediation and verify the fixes in a controlled test environment.")
+    if api_endpoints or directory_hits:
+        remediation_items.append("Reduce public exposure by restricting access to administrative paths, debug endpoints, and unnecessary services.")
+    if src_findings:
+        remediation_items.append("Remove or rotate any exposed credentials, tokens, or sensitive patterns found in source code or client-side assets.")
+    if wordpress.get("detected"):
+        remediation_items.append("Patch the WordPress core, plugins, and themes to the current supported versions.")
+    if not remediation_items:
+        remediation_items.append("Continue routine monitoring and review the deployment configuration on a regular cadence.")
+
+    evidence_items = [
+        f"Target: {report_data.get('target', '-')}",
+        f"Timestamp: {report_data.get('date', '-')}",
+        f"HTTP status: {general.get('status_code', '-')}",
+        f"Technologies: {', '.join(str(t.get('name', t)) for t in technologies if isinstance(t, dict)) or 'None recorded'}",
+        f"Observed ports: {', '.join(str(p.get('port', '-')) for p in nmap_ports if isinstance(p, dict)) or 'None recorded'}",
+        f"Headers: {', '.join(headers.keys()) if headers else 'No headers recorded'}",
+        f"Nuclei findings: {len(nuclei_findings)}",
+        f"Source code findings: {len(src_findings)}",
+        f"Spidered URLs: {len(spider.get('sample_urls', []) or [])}",
+    ]
+
+    html_template = """<!doctype html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AisoSec Audit Dashboard - __TITLE_TARGET__</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
-<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/fill/style.css">
+<title>AisoSec Audit Report</title>
 <style>
-:root{
-  --bg:#f4f6fb; --surface:#ffffff; --surface-2:#eef1f6; --glass:rgba(255,255,255,.72); --text:#0f172a; --muted:#5b6675;
-  --line:#dde3ec; --blue:#2563eb; --green:#0f9d6b; --amber:#b7791f; --orange:#d9772b; --red:#d33a34;
-  --ink:#0b1220; --accent:#2563eb; --accent-2:#0ea5e9; --glow:rgba(37,99,235,.18); --shadow:rgba(15,23,42,.10);
-  --c-crit:#d33a34; --c-high:#d9772b; --c-med:#caa11a; --c-low:#2563eb; --c-info:#8a93a3;
-  --grid-line:rgba(37,99,235,.045);
-  --font-head:"Space Grotesk","Segoe UI",sans-serif;
-  --sidew:266px;
-}
-[data-theme="dark"]{
-  --bg:#070a10; --surface:#0f141d; --surface-2:#161d29; --glass:rgba(15,20,29,.66); --text:#d6dde7; --muted:#7e8a99;
-  --line:#1e2735; --blue:#5b9dff; --green:#33d68f; --amber:#e7b85a; --orange:#ff9d57; --red:#ff6b6b;
-  --ink:#f4f7fb; --accent:#4d9bff; --accent-2:#38bdf8; --glow:rgba(77,155,255,.24); --shadow:rgba(0,0,0,.45);
-  --c-crit:#ff6b6b; --c-high:#ff9d57; --c-med:#ffd24a; --c-low:#5b9dff; --c-info:#7e8a99;
-  --grid-line:rgba(77,155,255,.05);
-}
-*{ box-sizing:border-box; }
-html{ scroll-behavior:smooth; }
-body{ margin:0; background:var(--bg); color:var(--text);
-  font-family:Inter,"Segoe UI",Roboto,Arial,sans-serif; -webkit-font-smoothing:antialiased;
-  background-image:
-    radial-gradient(900px 480px at 100% -8%,var(--glow),transparent 60%),
-    radial-gradient(700px 420px at -8% 8%,color-mix(in srgb,var(--accent-2) 14%,transparent),transparent 60%),
-    linear-gradient(var(--grid-line) 1px,transparent 1px),
-    linear-gradient(90deg,var(--grid-line) 1px,transparent 1px);
-  background-size:auto,auto,34px 34px,34px 34px; background-attachment:fixed; }
-h1,h2,h3,.brand-txt strong,.metric strong,.donut-hole strong{ font-family:var(--font-head); letter-spacing:-.01em; }
-a{ color:inherit; text-decoration:none; }
-code,pre{ font-family:"JetBrains Mono",Consolas,Menlo,Monaco,monospace; }
-::selection{ background:var(--glow); }
-.layout{ display:grid; grid-template-columns:var(--sidew) minmax(0,1fr); min-height:100vh; transition:grid-template-columns .22s ease; }
-.layout.collapsed{ --sidew:74px; }
-.side{ position:sticky; top:0; height:100vh; padding:16px 12px; border-right:1px solid var(--line);
-  background:var(--glass); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); overflow:auto; overflow-x:hidden; }
-.brand{ display:flex; align-items:center; gap:11px; padding:4px 6px 14px; margin-bottom:10px; border-bottom:1px solid var(--line); }
-.logo{ width:40px; height:40px; border-radius:12px; flex:0 0 auto; display:grid; place-items:center; position:relative;
-  background:linear-gradient(135deg,var(--accent),var(--accent-2)); color:#ffffff; font-size:1.45rem;
-  box-shadow:0 0 0 3px var(--glow),0 6px 18px var(--shadow); }
-.brand-txt{ overflow:hidden; }
-.brand-txt strong{ display:block; font-size:1rem; color:var(--ink); font-weight:700; white-space:nowrap; }
-.brand-txt span{ display:block; color:var(--muted); font-size:.7rem; font-family:"JetBrains Mono",monospace; letter-spacing:.4px; text-transform:uppercase; white-space:nowrap; }
-.collapse-btn{ position:fixed; top:20px; left:calc(var(--sidew) - 14px); z-index:55;
-  width:28px; height:28px; border-radius:50%; border:1px solid var(--line); background:var(--surface); color:var(--muted);
-  cursor:pointer; display:grid; place-items:center; box-shadow:0 2px 10px var(--shadow);
-  transition:left .22s ease, color .15s, border-color .15s, background .15s; }
-.collapse-btn:hover{ border-color:var(--accent); color:var(--accent); }
-.collapse-btn #collapseIcon{ transition:transform .22s ease; }
-.side-nav{ display:flex; flex-direction:column; gap:2px; }
-.side-nav a{ display:flex; align-items:center; gap:10px; color:var(--muted); padding:9px 11px; border-radius:10px;
-  font-size:.9rem; border-left:2px solid transparent; transition:.15s; white-space:nowrap; }
-.side-nav a:hover{ background:var(--surface-2); color:var(--text); }
-.side-nav a.active{ background:color-mix(in srgb,var(--accent) 12%,var(--surface)); color:var(--ink); border-left-color:var(--accent); }
-.nicon{ font-size:1.15rem; color:var(--muted); flex:0 0 auto; width:20px; text-align:center; transition:color .15s; }
-svg.nicon{ display:inline-block; vertical-align:-2px; } svg.shic{ display:inline-block; vertical-align:-3px; }
-.side-nav a:hover .nicon,.side-nav a.active .nicon{ color:var(--accent); }
-.ntext{ flex:1; overflow:hidden; text-overflow:ellipsis; }
-.ncount{ font-family:"JetBrains Mono",monospace; font-size:.72rem; background:var(--surface); border:1px solid var(--line);
-  border-radius:999px; padding:1px 7px; color:var(--muted); }
-.collapsed .brand{ justify-content:center; gap:0; }
-.collapsed .brand-txt,.collapsed .ntext,.collapsed .ncount,.collapsed #themeLabel{ display:none; }
-.collapsed .side-nav a{ justify-content:center; padding:11px 0; }
-.filter-bar{ display:flex; flex-wrap:wrap; gap:14px; margin-bottom:20px; padding:14px 16px;
-  background:var(--surface); border:1px solid var(--line); border-radius:14px; }
-.filter-group{ display:flex; align-items:flex-start; gap:8px; flex-wrap:wrap; }
-.filter-lbl{ font-size:.74rem; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.5px;
-  padding-top:7px; white-space:nowrap; display:flex; align-items:center; gap:5px; }
-.filter-chips{ display:flex; flex-wrap:wrap; gap:5px; }
-.fchip{ border:1px solid var(--line); background:var(--surface-2); color:var(--muted); border-radius:9px;
-  padding:5px 11px; font-size:.78rem; cursor:pointer; transition:.15s; display:inline-flex; align-items:center; gap:5px; }
-.fchip:hover{ border-color:var(--accent); color:var(--ink); }
-.fchip.active{ background:color-mix(in srgb,var(--accent) 14%,var(--surface)); border-color:var(--accent); color:var(--ink); font-weight:600; }
-.fchip b{ font-family:"JetBrains Mono",monospace; font-size:.72rem; }
-.fchip-critical{ --fc:var(--c-crit); } .fchip-high{ --fc:var(--c-high); }
-.fchip-medium{ --fc:var(--c-med); } .fchip-low{ --fc:var(--c-low); } .fchip-info{ --fc:var(--c-info); }
-.fchip-critical.active,.fchip-high.active,.fchip-medium.active,.fchip-low.active,.fchip-info.active{
-  background:color-mix(in srgb,var(--fc) 14%,var(--surface)); border-color:var(--fc); color:var(--fc); }
-.main{ padding:22px clamp(14px,3vw,36px) 40px; max-width:1580px; width:100%; }
-.topbar{ position:sticky; top:0; z-index:40; display:flex; align-items:center; gap:11px; flex-wrap:wrap;
-  margin:-22px calc(-1*clamp(14px,3vw,36px)) 18px; padding:14px clamp(14px,3vw,36px);
-  background:var(--glass); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); border-bottom:1px solid var(--line); }
-.menu-fab{ display:none; position:fixed; top:12px; left:12px; z-index:70; width:46px; height:46px; place-items:center;
-  border:1px solid var(--line); background:var(--glass); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
-  color:var(--text); border-radius:13px; cursor:pointer; font-size:1.4rem; box-shadow:0 6px 18px var(--shadow); }
-.search{ flex:1; min-width:200px; display:flex; align-items:center; gap:8px; background:var(--surface);
-  border:1px solid var(--line); border-radius:11px; padding:9px 13px; transition:.15s; }
-.search:focus-within{ border-color:var(--accent); box-shadow:0 0 0 3px var(--glow); }
-.search input{ flex:1; border:0; background:transparent; color:var(--text); outline:none; font-size:.9rem; }
-.search input::placeholder{ color:var(--muted); }
-.btn{ border:1px solid var(--line); background:var(--surface); color:var(--text); border-radius:11px;
-  padding:9px 13px; font-size:.86rem; cursor:pointer; transition:.15s; display:inline-flex; align-items:center; gap:7px; }
-.btn:hover{ border-color:var(--accent); color:var(--ink); }
-.hero{ display:grid; grid-template-columns:1fr auto; gap:20px; align-items:center; margin-bottom:18px;
-  background:linear-gradient(135deg,var(--surface),var(--surface-2)); border:1px solid var(--line);
-  border-radius:18px; padding:26px; position:relative; overflow:hidden; box-shadow:0 12px 40px var(--shadow); }
-.hero::before{ content:""; position:absolute; inset:0; opacity:.5; pointer-events:none;
-  background:radial-gradient(420px 220px at 88% -30%,var(--glow),transparent 65%),radial-gradient(360px 200px at 60% 130%,color-mix(in srgb,var(--accent-2) 18%,transparent),transparent 60%); }
-.hero>*{ position:relative; z-index:1; }
-.eyebrow{ display:inline-flex; align-items:center; gap:8px; font-family:"JetBrains Mono",monospace; font-size:.72rem; color:var(--accent); letter-spacing:1.6px; text-transform:uppercase; }
-.eyebrow::before{ content:""; width:7px; height:7px; border-radius:50%; background:var(--accent); box-shadow:0 0 0 4px var(--glow); animation:pulse 2.4s ease-in-out infinite; }
-@keyframes pulse{ 0%,100%{ opacity:1; } 50%{ opacity:.35; } }
-.hero h1{ margin:10px 0 6px; font-size:2.55rem; line-height:1.08; color:var(--ink); font-weight:700; }
-.hero p{ margin:0; color:var(--muted); font-family:"JetBrains Mono",monospace; font-size:.9rem; overflow-wrap:anywhere; }
-.hero .tags{ margin-top:14px; display:flex; gap:8px; flex-wrap:wrap; }
-.riskcard{ display:flex; align-items:center; gap:18px; }
-.donut{ width:118px; height:118px; border-radius:50%; display:grid; place-items:center; flex:0 0 auto;
-  box-shadow:0 0 0 1px var(--line),0 14px 36px var(--shadow); animation:spin .9s ease-out; }
-@keyframes spin{ from{ transform:rotate(-120deg) scale(.85); opacity:0; } to{ transform:none; opacity:1; } }
-.donut-hole{ width:82px; height:82px; border-radius:50%; background:var(--surface); display:grid; place-content:center; text-align:center;
-  box-shadow:inset 0 0 12px var(--shadow); }
-.donut-hole span{ font-size:.58rem; letter-spacing:1.5px; color:var(--muted); font-family:"JetBrains Mono",monospace; }
-.donut-hole strong{ font-size:1rem; line-height:1.1; font-weight:700; }
-.donut-hole small{ font-size:.6rem; color:var(--muted); font-family:"JetBrains Mono",monospace; }
-.risk-bad{ color:var(--red); } .risk-warn{ color:var(--amber); } .risk-info{ color:var(--blue); } .risk-good{ color:var(--green); }
-.legend{ display:flex; flex-direction:column; gap:6px; min-width:118px; }
-.leg{ display:flex; align-items:center; gap:8px; font-size:.78rem; color:var(--muted); }
-.leg i{ width:9px; height:9px; border-radius:3px; flex:0 0 auto; }
-.leg b{ margin-left:auto; color:var(--text); font-family:"JetBrains Mono",monospace; }
-.kpis{ display:grid; grid-template-columns:repeat(auto-fit,minmax(152px,1fr)); gap:12px; margin:0 0 20px; }
-.metric{ background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:14px 15px; position:relative;
-  overflow:hidden; transition:transform .15s,box-shadow .15s,border-color .15s; }
-.metric::before{ content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--line); }
-.metric:hover{ transform:translateY(-3px); border-color:var(--accent); box-shadow:0 12px 28px var(--shadow); }
-.metric span{ display:block; color:var(--muted); font-size:.74rem; text-transform:uppercase; letter-spacing:.5px; }
-.metric strong{ display:block; margin-top:9px; font-size:1.7rem; color:var(--ink); font-weight:700; }
-.metric-good::before{ background:var(--green); } .metric-info::before{ background:var(--blue); }
-.metric-warn::before{ background:var(--amber); } .metric-bad::before{ background:var(--red); }
-.section{ margin:0 0 28px; scroll-margin-top:78px; }
-.section-head{ display:flex; align-items:center; gap:11px; border-bottom:1px solid var(--line); margin-bottom:13px; padding-bottom:8px; }
-.section-head .shic{ font-size:1.3rem; color:var(--accent); flex:0 0 auto; }
-.section-head h2{ font-size:1.2rem; margin:0; color:var(--ink); font-weight:600; }
-.metric span i{ margin-right:7px; color:var(--accent); font-size:.95rem; vertical-align:-1px; }
-a.metric{ color:inherit; }
-.btn i,.theme-btn i:not(#themeIcon),.toplink i{ font-size:1.05rem; vertical-align:-2px; }
-.section-head .count{ font-family:"JetBrains Mono",monospace; font-size:.74rem; color:var(--accent);
-  border:1px solid color-mix(in srgb,var(--accent) 35%,var(--line)); border-radius:999px; padding:1px 9px; }
-.toplink{ margin-left:auto; color:var(--muted); font-size:1.05rem; padding:1px 8px; border-radius:8px; }
-.toplink:hover{ color:var(--accent); background:var(--surface-2); }
-.panel{ background:var(--surface); border:1px solid var(--line); border-radius:15px; padding:15px; margin-bottom:12px; box-shadow:0 3px 14px var(--shadow); }
-.panel h3{ margin:0 0 12px; font-size:1rem; color:var(--ink); font-weight:600; display:flex; align-items:center; gap:9px; }
-.panel h3::before{ content:""; width:8px; height:8px; border-radius:3px; background:linear-gradient(135deg,var(--accent),var(--accent-2)); }
-.panel h4{ margin:14px 0 7px; font-size:.78rem; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; }
-.grid{ display:grid; gap:12px; } .grid.two{ grid-template-columns:repeat(2,minmax(0,1fr)); }
-.table-wrap{ overflow:auto; border:1px solid var(--line); border-radius:12px; }
-table{ width:100%; border-collapse:separate; border-spacing:0; min-width:600px; }
-th,td{ text-align:left; padding:11px 13px; border-bottom:1px solid var(--line); vertical-align:top; font-size:.86rem; }
-th{ position:sticky; top:0; background:var(--surface-2); color:var(--muted); font-weight:700; text-transform:uppercase;
-  font-size:.7rem; letter-spacing:.6px; z-index:1; }
-tbody tr{ transition:background .12s; } tbody tr:hover{ background:var(--surface-2); }
-tr:last-child td{ border-bottom:none; }
-td{ overflow-wrap:anywhere; } td code{ font-size:.82rem; color:var(--accent); }
-.empty{ color:var(--muted); text-align:center; font-style:italic; }
-.muted{ color:var(--muted); }
-.badge{ display:inline-flex; align-items:center; min-height:22px; padding:2px 10px; border-radius:999px; font-size:.74rem;
-  font-weight:700; border:1px solid var(--line); background:var(--surface-2); white-space:nowrap; letter-spacing:.3px; }
-.badge-good{ color:var(--green); background:color-mix(in srgb,var(--green) 13%,var(--surface)); border-color:color-mix(in srgb,var(--green) 32%,var(--line)); }
-.badge-info{ color:var(--blue); background:color-mix(in srgb,var(--blue) 13%,var(--surface)); border-color:color-mix(in srgb,var(--blue) 32%,var(--line)); }
-.badge-warn{ color:var(--amber); background:color-mix(in srgb,var(--amber) 16%,var(--surface)); border-color:color-mix(in srgb,var(--amber) 32%,var(--line)); }
-.badge-bad{ color:var(--red); background:color-mix(in srgb,var(--red) 13%,var(--surface)); border-color:color-mix(in srgb,var(--red) 34%,var(--line)); }
-.chips{ display:flex; flex-wrap:wrap; gap:7px; }
-.chip{ border:1px solid var(--line); background:var(--surface-2); border-radius:9px; padding:5px 11px; font-size:.8rem;
-  font-family:"JetBrains Mono",monospace; transition:.15s; }
-.chip:hover{ border-color:var(--accent); color:var(--accent); }
-pre{ max-height:560px; overflow:auto; padding:15px; border-radius:12px; background:var(--surface-2); border:1px solid var(--line);
-  white-space:pre-wrap; overflow-wrap:anywhere; font-size:.8rem; line-height:1.55; }
-details{ border:1px solid var(--line); border-radius:12px; padding:11px 13px; margin-bottom:9px; background:var(--surface); }
-summary{ cursor:pointer; color:var(--ink); font-weight:600; }
-::-webkit-scrollbar{ width:10px; height:10px; }
-::-webkit-scrollbar-track{ background:transparent; }
-::-webkit-scrollbar-thumb{ background:var(--line); border-radius:999px; border:2px solid var(--bg); }
-::-webkit-scrollbar-thumb:hover{ background:var(--muted); }
-.hidden-row,.sev-hidden{ display:none !important; }
-@media (max-width:980px){
-  .layout,.layout.collapsed{ grid-template-columns:1fr; --sidew:266px; }
-  .side{ position:fixed; z-index:60; width:280px; transform:translateX(-100%); transition:transform .22s; box-shadow:0 0 40px var(--shadow); }
-  .side.open{ transform:translateX(0); }
-  .menu-fab{ display:grid; } .collapse-btn{ display:none; }
-  .collapsed .brand-txt,.collapsed .ntext,.collapsed .ncount,.collapsed #themeLabel{ display:block; }
-  .main{ padding:16px; } .topbar{ margin:-16px -16px 16px; padding:12px 16px; }
-  .grid.two{ grid-template-columns:1fr; }
-  .hero{ grid-template-columns:1fr; } .hero h1{ font-size:1.95rem; }
-  .riskcard{ justify-content:flex-start; }
-}
-@media (prefers-reduced-motion:reduce){ *{ animation:none !important; transition:none !important; } }
-@media print{
-  @page{ margin:12mm 10mm; }
-  /* Force light palette in PDF: maximum readability and lower ink use */
-  :root,[data-theme="dark"]{
-    --bg:#ffffff; --surface:#ffffff; --surface-2:#f3f5f9; --glass:#ffffff; --text:#16202e; --muted:#54606e;
-    --line:#cfd6e2; --ink:#0b1220; --accent:#0a8f6c; --accent-2:#2358d8; --glow:transparent; --shadow:transparent;
-    --c-crit:#c2271f; --c-high:#c25e15; --c-med:#9a7d0a; --c-low:#2358d8; --c-info:#6b7480;
-  }
-  *{ -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; box-shadow:none !important; }
-  .side,.topbar,.toplink,.collapse-btn,.menu-fab{ display:none !important; }
-  html,body{ background:#fff !important; background-image:none !important; color:var(--text) !important; }
-  .layout,.layout.collapsed{ display:block !important; grid-template-columns:1fr !important; }
-  .main{ padding:0 14mm !important; max-width:none !important; }
-  .hero{ margin-top:4px; }
-  /* Avoid awkward page breaks */
-  .panel,.metric,details,.table-wrap,.riskcard,.donut,.kpis,img{ break-inside:avoid; page-break-inside:avoid; }
-  tr{ break-inside:avoid; page-break-inside:avoid; }
-  thead{ display:table-header-group; } th{ position:static !important; }
-  .section{ break-inside:auto; margin-bottom:18px; }
-  .section-head,h1,h2,h3,h4{ break-after:avoid; page-break-after:avoid; }
-  /* Show full content (without scroll clipping) */
-  pre{ max-height:none !important; overflow:visible !important; }
-  .table-wrap{ overflow:visible !important; } table{ min-width:0 !important; }
-  /* Extra spacing so nothing sticks to the edges */
-  section.section:first-of-type{ padding-top:2px; }
-}
+body { font-family: Arial, sans-serif; margin: 2rem; color: #1f2937; line-height: 1.6; }
+.container { max-width: 1100px; margin: 0 auto; }
+h1, h2, h3 { color: #0f172a; }
+header { border-bottom: 2px solid #dbeafe; padding-bottom: 1rem; margin-bottom: 1.5rem; }
+.badge { display: inline-block; padding: 0.3rem 0.6rem; border-radius: 999px; background: #eff6ff; color: #1d4ed8; margin-right: 0.5rem; font-size: 0.9rem; }
+section { margin-bottom: 1.5rem; }
+table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; }
+th, td { border: 1px solid #e5e7eb; padding: 0.6rem; text-align: left; vertical-align: top; }
+th { background: #f8fafc; }
+.muted { color: #64748b; }
+code { background: #f8fafc; padding: 0.1rem 0.3rem; }
 </style>
 </head>
 <body>
-<span id="top"></span>
-<button class="menu-fab" id="menuBtn" type="button" aria-label="Open menu"><i class="ph ph-list"></i></button>
-<div class="layout" id="layout">
-  <aside class="side" id="sidebar">
-    <div class="brand">
-      <div class="logo"><i class="ph-fill ph-magnifying-glass"></i></div>
-      <div class="brand-txt">
-        <strong>AisoSec&nbsp;Audit</strong>
-        <span>Security Report</span>
-      </div>
-    </div>
-    __NAV__
-  </aside>
-  <button class="collapse-btn" id="collapseBtn" type="button" title="Collapse / expand menu" aria-label="Collapse or expand menu">
-    <i id="collapseIcon" class="ph ph-caret-left"></i>
-  </button>
-  <main class="main">
-    <div class="topbar">
-      <label class="search"><i class="ph ph-magnifying-glass muted"></i><input id="q" type="search" placeholder="Filter tables (host, port, CVE, hash...)"></label>
-      <button class="btn" onclick="window.print()" type="button"><i class="ph ph-file-pdf"></i> <span>Export PDF</span></button>
-      <button id="themeBtn" class="btn theme-btn" type="button" aria-label="Change theme"><i id="themeIcon" class="ph ph-moon"></i> <span id="themeLabel">Theme</span></button>
-    </div>
-    <section class="hero">
-      <div>
-        <div class="eyebrow">AISOSEC // SECURITY ASSESSMENT</div>
-        <h1>AisoSec Audit</h1>
-        <p>__TARGET__</p>
-        <div class="tags">
-          <span class="badge badge-info">AisoSec v__TOOL__</span>
-          <span class="badge badge-__RISK_TONE__">__RISK_LABEL__ Risk</span>
-          <span class="badge">__DATE__</span>
-        </div>
-      </div>
-      __RISK__
-    </section>
-    __FILTERS__
-    __SECTIONS__
-  </main>
+<div class="container">
+<header>
+<h1>AisoSec Audit</h1>
+<p><strong>Authorized security assessment report</strong></p>
+<p class="muted">__TARGET__</p>
+<p><span class="badge">__AUTH_STATUS__</span><span class="badge">__RISK__ risk</span><span class="badge">__DATE__</span></p>
+</header>
+
+<section>
+<h2>Executive Summary</h2>
+<p>__AUTH_NOTE__</p>
+<p>__RISK_TEXT__ The assessment indicates that the primary concerns are the items listed in this report, while informational observations are presented without exaggeration.</p>
+</section>
+
+<section>
+<h2>Assessment Scope</h2>
+<ul>__SCOPE_ITEMS__</ul>
+</section>
+
+<section>
+<h2>Authorization &amp; Limitations</h2>
+<p>This report documents an authorized security assessment. The assessment was constrained to the target and the observable environment at the time of testing. It did not include destructive activity or access beyond the approved scope.</p>
+<p class="muted">The assessment was __AUTHENTICATED_TEXT__. The findings below reflect the evidence available from the observed environment.</p>
+</section>
+
+<section>
+<h2>Methodology</h2>
+<p>The assessment combined passive review, network reconnaissance, HTTP inspection, directory discovery, Spidering, source code review, and targeted scanning. Findings were recorded from the collected evidence without introducing additional intrusive activity.</p>
+</section>
+
+<section>
+<h2>Risk Overview</h2>
+<p><strong>Overall risk:</strong> __RISK__</p>
+<ul>
+<li>Critical findings: __CRITICAL__</li>
+<li>High findings: __HIGH__</li>
+<li>Medium findings: __MEDIUM__</li>
+<li>Low findings: __LOW__</li>
+<li>Informational findings: __INFO__</li>
+</ul>
+</section>
+
+<section>
+<h2>Findings Summary</h2>
+__FINDINGS_TABLE__
+</section>
+
+<section>
+<h2>Evidence</h2>
+<ul>__EVIDENCE_ITEMS__</ul>
+<h3>Observed ports</h3>
+__PORTS_TABLE__
+<h3>Headers</h3>
+__HEADERS_TABLE__
+<h3>Nuclei findings</h3>
+__NUCLEI_TABLE__
+<h3>Source code findings</h3>
+__SRC_TABLE__
+<h3>Spidered URLs</h3>
+__SPIDER_TABLE__
+</section>
+
+<section>
+<h2>Remediation Plan</h2>
+<ol>__REMEDIATION_ITEMS__</ol>
+</section>
+
+<section>
+<h2>Technical Appendix</h2>
+<p><strong>Observed technologies:</strong> __TECHS__</p>
+<p><strong>Directories discovered:</strong> __DIRS__</p>
+<p><strong>API endpoints:</strong> __APIS__</p>
+<p><strong>Subdomains / vhosts:</strong> __VHOSTS__</p>
+<p><strong>Users and emails:</strong> __USERS__ / __EMAILS__</p>
+<p><strong>WordPress:</strong> __WORDPRESS__</p>
+<p><strong>Active directory data:</strong> __AD__</p>
+</section>
 </div>
-<script>
-(function(){
-  var root=document.documentElement, key="wstg_dashboard_theme";
-  var stored=localStorage.getItem(key);
-  var initial=stored||((window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches)?"dark":"light");
-  function paint(t){ root.setAttribute("data-theme",t);
-    var i=document.getElementById("themeIcon"), l=document.getElementById("themeLabel");
-    if(i) i.className="ph "+((t==="dark")?"ph-sun":"ph-moon"); if(l) l.textContent=(t==="dark")?"Light mode":"Dark mode"; }
-  paint(initial);
-  document.getElementById("themeBtn").addEventListener("click",function(){
-    var next=root.getAttribute("data-theme")==="dark"?"light":"dark"; paint(next); localStorage.setItem(key,next); });
-  var sb=document.getElementById("sidebar"), mb=document.getElementById("menuBtn");
-  if(mb) mb.addEventListener("click",function(){ sb.classList.toggle("open"); });
-  // Collapse sidebar (desktop) with persistence
-  var layout=document.getElementById("layout"), ck="wstg_sidebar_collapsed";
-  function setCollapse(c){ layout.classList.toggle("collapsed",c);
-    var ic=document.getElementById("collapseIcon"); if(ic) ic.style.transform=c?"rotate(180deg)":"none"; }
-  setCollapse(localStorage.getItem(ck)==="1");
-  function toggleCollapse(){ var c=!layout.classList.contains("collapsed"); setCollapse(c); localStorage.setItem(ck,c?"1":"0"); }
-  var cb=document.getElementById("collapseBtn");
-  if(cb) cb.addEventListener("click",function(){ if(window.innerWidth<=980){ sb.classList.remove("open"); } else { toggleCollapse(); } });
-  // Scrollspy
-  var links=[].slice.call(document.querySelectorAll(".side-nav a"));
-  var map={}; links.forEach(function(a){ map[a.getAttribute("data-target")]=a; });
-  var obs=new IntersectionObserver(function(es){
-    es.forEach(function(e){ if(e.isIntersecting){ links.forEach(function(a){a.classList.remove("active");});
-      var a=map[e.target.id]; if(a) a.classList.add("active"); } });
-  },{rootMargin:"-12% 0px -80% 0px"});
-  document.querySelectorAll("section.section").forEach(function(s){ obs.observe(s); });
-  links.forEach(function(a){ a.addEventListener("click",function(){ if(window.innerWidth<=980) sb.classList.remove("open"); }); });
-  // Filters: text, severity, section
-  var activeSev="all", activeSec="all";
-  function applyRowFilters(){
-    var qv=document.getElementById("q"); var v=qv?qv.value.trim().toLowerCase():"";
-    document.querySelectorAll("tbody tr").forEach(function(tr){
-      if(tr.querySelector("td.empty")){ tr.classList.remove("hidden-row","sev-hidden"); return; }
-      var sev=tr.getAttribute("data-sev")||"";
-      tr.classList.toggle("sev-hidden", activeSev!=="all" && sev && sev!==activeSev);
-      tr.classList.toggle("hidden-row", !!(v && tr.textContent.toLowerCase().indexOf(v)===-1));
-    });
-  }
-  function applySecFilter(){
-    document.querySelectorAll("section.section").forEach(function(s){
-      if(activeSec==="all"||s.id==="summary"){ s.style.display=""; return; }
-      s.style.display=(s.id===activeSec)?"":"none";
-    });
-  }
-  document.querySelectorAll("[data-filter-sev]").forEach(function(btn){
-    btn.addEventListener("click",function(){
-      document.querySelectorAll("[data-filter-sev]").forEach(function(b){b.classList.remove("active");});
-      btn.classList.add("active"); activeSev=btn.getAttribute("data-filter-sev"); applyRowFilters();
-    });
-  });
-  document.querySelectorAll("[data-filter-sec]").forEach(function(btn){
-    btn.addEventListener("click",function(){
-      document.querySelectorAll("[data-filter-sec]").forEach(function(b){b.classList.remove("active");});
-      btn.classList.add("active"); activeSec=btn.getAttribute("data-filter-sec"); applySecFilter();
-    });
-  });
-  var q=document.getElementById("q");
-  if(q) q.addEventListener("input", applyRowFilters);
-})();
-</script>
 </body>
 </html>"""
-    return (
-        template
-        .replace("__TITLE_TARGET__", esc(report_data.get("target", "")))
-        .replace("__TARGET__", esc(report_data.get("target", "")))
-        .replace("__DATE__", esc(report_data.get("date", "")))
-        .replace("__TOOL__", esc(report_data.get("tool", "")))
-        .replace("__RISK_TONE__", risk_tone)
-        .replace("__RISK_LABEL__", esc(risk_label))
-        .replace("__RISK__", risk_html)
-        .replace("__NAV__", nav)
-        .replace("__FILTERS__", filter_html)
-        .replace("__SECTIONS__", section_html)
-    )
 
-def _md_escape_cell(value):
-    """Escapa el contenido de una celda de tabla markdown."""
-    text = str(value) if value is not None else ""
-    # No saltos de línea ni pipes literales
-    text = text.replace('\r', ' ').replace('\n', '<br>')
-    text = text.replace('|', '\\|')
-    return text or "-"
+    scope_html = "".join(f"<li>{_escape_text(item)}</li>" for item in scope_items)
+    evidence_html = "".join(f"<li>{_escape_text(item)}</li>" for item in evidence_items)
+    remediation_html = "".join(f"<li>{_escape_text(item)}</li>" for item in remediation_items)
+    findings_table = _build_table(["Severity", "Title", "Detail"], findings_rows)
+    ports_table = _build_table(["Port", "Protocol", "State", "Service"], [[str(p.get("port", "-")), str(p.get("protocol", "-")), str(p.get("state", "-")), str(p.get("service", "-"))] for p in nmap_ports if isinstance(p, dict)])
+    headers_table = _build_table(["Header", "Value"], [[h, _escape_text(str(headers.get(h) or headers.get(h.lower()) or "-"))] for h in required_headers])
+    nuclei_rows = [[_severity_label(n.get("severity") or "info"), _escape_text(str(n.get("template_id", "-"))), _escape_text(str(n.get("name", "-"))), _escape_text(str(n.get("url", "-")))] for n in nuclei_findings]
+    nuclei_table = _build_table(["Severity", "Template", "Name", "URL"], nuclei_rows) if nuclei_findings else "<p class='muted'>No Nuclei findings were recorded.</p>"
+    src_rows = [[_severity_label(f.get("severity") or "low"), _escape_text(str(f.get("type", "-"))), _escape_text(str(f.get("value", "-"))), _escape_text(str(f.get("url", "-")))] for f in src_findings]
+    src_table = _build_table(["Severity", "Type", "Value", "URL"], src_rows) if src_findings else "<p class='muted'>No source code findings were recorded.</p>"
+    spider_table = "<ul>" + "".join(f"<li>{_escape_text(item)}</li>" for item in spider.get("sample_urls", []) or []) + "</ul>" if spider.get("sample_urls") else "<p class='muted'>No spidered URLs recorded.</p>"
 
-def _md_table(headers, rows):
-    """Genera una tabla markdown estándar (con escape de pipes and saltos)."""
-    if not headers:
-        return ""
-    header_line = "| " + " | ".join(_md_escape_cell(h) for h in headers) + " |"
-    sep_line = "| " + " | ".join("---" for _ in headers) + " |"
-    lines = [header_line, sep_line]
-    for r in rows:
-        cells = [_md_escape_cell(r[i] if i < len(r) else "") for i in range(len(headers))]
-        lines.append("| " + " | ".join(cells) + " |")
-    return "\n".join(lines)
+    report_html = html_template.replace("__TARGET__", _escape_text(report_data.get("target", "-")))
+    report_html = report_html.replace("__AUTH_STATUS__", _escape_text(auth_status))
+    report_html = report_html.replace("__RISK__", _escape_text(overall_risk))
+    report_html = report_html.replace("__DATE__", _escape_text(report_data.get("date", "-")))
+    report_html = report_html.replace("__AUTH_NOTE__", _escape_text(auth_note))
+    report_html = report_html.replace("__RISK_TEXT__", _escape_text(overall_risk_text))
+    report_html = report_html.replace("__SCOPE_ITEMS__", scope_html)
+    report_html = report_html.replace("__AUTHENTICATED_TEXT__", _escape_text("authenticated" if AUTHENTICATED else "unauthenticated"))
+    report_html = report_html.replace("__CRITICAL__", _escape_text(str(sev_counts["critical"])))
+    report_html = report_html.replace("__HIGH__", _escape_text(str(sev_counts["high"])))
+    report_html = report_html.replace("__MEDIUM__", _escape_text(str(sev_counts["medium"])))
+    report_html = report_html.replace("__LOW__", _escape_text(str(sev_counts["low"])))
+    report_html = report_html.replace("__INFO__", _escape_text(str(sev_counts["info"])))
+    report_html = report_html.replace("__FINDINGS_TABLE__", findings_table)
+    report_html = report_html.replace("__EVIDENCE_ITEMS__", evidence_html)
+    report_html = report_html.replace("__PORTS_TABLE__", ports_table)
+    report_html = report_html.replace("__HEADERS_TABLE__", headers_table)
+    report_html = report_html.replace("__NUCLEI_TABLE__", nuclei_table)
+    report_html = report_html.replace("__SRC_TABLE__", src_table)
+    report_html = report_html.replace("__SPIDER_TABLE__", spider_table)
+    report_html = report_html.replace("__REMEDIATION_ITEMS__", remediation_html)
+    report_html = report_html.replace("__TECHS__", _escape_text(", ".join(str(t.get("name", t)) for t in technologies if isinstance(t, dict)) or "None recorded"))
+    report_html = report_html.replace("__DIRS__", _escape_text(str(len(directory_hits))))
+    report_html = report_html.replace("__APIS__", _escape_text(str(len(api_endpoints))))
+    report_html = report_html.replace("__VHOSTS__", _escape_text(str(len(vhosts))))
+    report_html = report_html.replace("__USERS__", _escape_text(", ".join(users[:10]) if users else "None recorded"))
+    report_html = report_html.replace("__EMAILS__", _escape_text(", ".join(emails[:10]) if emails else "None recorded"))
+    report_html = report_html.replace("__WORDPRESS__", _escape_text("Detected" if wordpress.get("detected") else "Not confirmed"))
+    report_html = report_html.replace("__AD__", _escape_text("Available" if active_directory else "Not collected"))
+    return report_html
+
 
 def _build_markdown_report(report_data):
-    """Construye el summary completo del pentest en markdown (compatible GitBook/GitHub)."""
+    """Build a professional Markdown report with structured sections."""
     scan_data = report_data.get("scan_data", {}) or {}
     findings = report_data.get("findings", []) or []
     target = report_data.get("target", "")
     date = report_data.get("date", "")
-
     general = scan_data.get("general", {}) or {}
-    nuclei_summary = scan_data.get("nuclei_summary", {}) or {}
-    nuclei_findings_list = scan_data.get("nuclei_findings", []) or []
+    headers = general.get("headers") or {}
+    technologies = general.get("technologies", []) or []
+    nmap_data = scan_data.get("nmap", {}) or {}
+    nmap_ports = nmap_data.get("ports", []) or []
+    nuclei_findings = scan_data.get("nuclei_findings", []) or []
     spider = scan_data.get("spider", {}) or {}
-    injection = scan_data.get("injection", {}) or {}
-    vhosts = scan_data.get("vhosts", []) or []
-    dir_hits = scan_data.get("directory_hits", []) or []
+    src_code = scan_data.get("source_code_analysis", {}) or {}
+    src_findings = src_code.get("findings", []) or []
+    robots_paths = scan_data.get("robots_paths", []) or []
+    http_methods = scan_data.get("http_methods", []) or []
     api_endpoints = scan_data.get("api_endpoints", []) or []
+    directory_hits = scan_data.get("directory_hits", []) or []
+    vhosts = scan_data.get("vhosts", []) or []
     users = scan_data.get("users", []) or []
     emails = scan_data.get("emails", []) or []
     creds = scan_data.get("bruteforce_credentials", []) or []
     wordpress = scan_data.get("wordpress", {}) or {}
-    robots_paths = scan_data.get("robots_paths", []) or []
-    http_methods = scan_data.get("http_methods", []) or []
-    src_code = scan_data.get("source_code_analysis", {}) or {}
-    src_findings = src_code.get("findings") or []
-    nmap_data = scan_data.get("nmap", {}) or {}
-    nmap_ports = nmap_data.get("ports", []) or []
-    nmap_nse = nmap_data.get("nse_results", []) or []
     active_directory = scan_data.get("active_directory", {}) or {}
-    ad_ldap = active_directory.get("ldap") or {}
-    ad_imp = active_directory.get("impacket") or {}
-    ad_nxc = active_directory.get("nxc") or {}
-    asrep_hashes = (ad_imp.get("asrep_roast") or {}).get("hashes") or []
-    kerberoast_hashes = (ad_imp.get("kerberoast") or {}).get("hashes") or []
-    ad_creds = (ad_nxc.get("bruteforce") or {}).get("credentials") or []
 
-    def _tech_str(item):
+    def _normalize_severity(value):
+        text = (value or "info").strip().lower()
+        return text if text in {"critical", "high", "medium", "low", "info"} else "info"
+
+    def _severity_label(value):
+        return {
+            "critical": "Critical",
+            "high": "High",
+            "medium": "Medium",
+            "low": "Low",
+            "info": "Informational",
+        }.get(_normalize_severity(value), "Informational")
+
+    sev_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0}
+    for item in findings:
+        sev = _normalize_severity((item.get("severity") if isinstance(item, dict) else None) or "info")
+        sev_counts[sev] += 1
+    for item in nuclei_findings:
+        sev = _normalize_severity(item.get("severity") or "info")
+        sev_counts[sev] += 1
+    for item in src_findings:
+        sev = _normalize_severity(item.get("severity") or "low")
+        sev_counts[sev] += 1
+    if sev_counts["critical"] or sev_counts["high"]:
+        risk_summary = "High"
+        risk_text = "The evidence indicates material exposure that should be remediated promptly."
+    elif sev_counts["medium"]:
+        risk_summary = "Medium"
+        risk_text = "The exposure is moderate and should be addressed in the near term."
+    else:
+        risk_summary = "Low"
+        risk_text = "The observed findings are mostly informational or low-risk hardening items."
+
+    required_headers = [
+        "Strict-Transport-Security",
+        "Content-Security-Policy",
+        "X-Frame-Options",
+        "X-Content-Type-Options",
+        "Referrer-Policy",
+        "Permissions-Policy",
+    ]
+    missing_headers = [h for h in required_headers if not (headers.get(h) or headers.get(h.lower()))]
+    auth_summary = "Authenticated assessment" if AUTHENTICATED else "Unauthenticated assessment"
+
+    scope_lines = [
+        f"- Target: {target}",
+        f"- Assessment time: {date}",
+        f"- Assessment type: {auth_summary}",
+        f"- HTTP status: {general.get('status_code', '-')}",
+        f"- Observed technologies: {', '.join(str(t.get('name', t)) for t in technologies if isinstance(t, dict)) or 'None recorded'}",
+    ]
+    finding_lines = []
+    for item in findings:
         if isinstance(item, dict):
-            name = str(item.get("name", "")).strip()
-            detail = str(item.get("detail", "")).strip()
-            return f"{name} ({detail})" if name and detail else (name or detail or "")
-        return str(item)
+            severity = _severity_label(item.get("severity") or "info")
+            title = item.get("name") or "Finding"
+            detail = item.get("detail") or ""
+        else:
+            severity = "Informational"
+            title = str(item)
+            detail = ""
+        finding_lines.append(f"- [{severity}] {title}: {detail}".rstrip())
+    if nuclei_findings:
+        info_count = sum(1 for n in nuclei_findings if _normalize_severity(n.get("severity") or "info") == "info")
+        if info_count:
+            finding_lines.append(f"- [Informational] Informational exposure / technology discovery: {info_count} Nuclei informational findings were grouped as technology discovery and exposure observations.")
+        for n in nuclei_findings:
+            if _normalize_severity(n.get("severity") or "info") != "info":
+                finding_lines.append(f"- [{_severity_label(n.get('severity') or 'info')}] {n.get('template_id', '-')} - {n.get('name', '-')} ({n.get('url', '-')})")
+    if missing_headers:
+        finding_lines.append(f"- [Low] Security header hardening opportunity: the response did not include {', '.join(missing_headers)}.")
 
-    def _count_label(total, limit):
-        """'(N)' si total <= limit; '(top limit de total)' en caso contrario."""
-        if total <= limit:
-            return f"({total})"
-        return f"(top {limit} de {total})"
+    remediation_items = []
+    if missing_headers:
+        remediation_items.append("- Implement the missing security headers with values appropriate for the application and deployment environment.")
+    if sev_counts["critical"] or sev_counts["high"]:
+        remediation_items.append("- Prioritize the highest-severity findings and verify the remediations in a controlled test environment.")
+    if api_endpoints or directory_hits:
+        remediation_items.append("- Reduce public exposure by restricting access to administrative paths, debug endpoints, and unnecessary services.")
+    if src_findings:
+        remediation_items.append("- Remove or rotate any exposed credentials, tokens, or sensitive patterns discovered in source code or client-side assets.")
+    if wordpress.get("detected"):
+        remediation_items.append("- Patch the WordPress core, plugins, and themes to current supported versions.")
+    if not remediation_items:
+        remediation_items.append("- Continue routine monitoring and review the deployment configuration on a regular cadence.")
 
-    SEV_ORDER = {'critical': 0, 'high': 1, 'medium': 2, 'low': 3, 'info': 4, 'unknown': 5}
+    evidence_lines = [
+        f"- Target: {target}",
+        f"- Timestamp: {date}",
+        f"- HTTP status: {general.get('status_code', '-')}",
+        f"- Technologies: {', '.join(str(t.get('name', t)) for t in technologies if isinstance(t, dict)) or 'None recorded'}",
+        f"- Observed ports: {', '.join(str(p.get('port', '-')) for p in nmap_ports if isinstance(p, dict)) or 'None recorded'}",
+        f"- Headers: {', '.join(headers.keys()) if headers else 'No headers recorded'}",
+        f"- Nuclei findings: {len(nuclei_findings)}",
+        f"- Source code findings: {len(src_findings)}",
+        f"- Spidered sample URLs: {', '.join(spider.get('sample_urls', [])[:5]) if spider.get('sample_urls') else 'None recorded'}",
+    ]
 
     parts = []
-    parts.append(f"# AisoSec Audit — Security Assessment Report")
+    parts.append("# AisoSec Audit")
     parts.append("")
-    parts.append(f"- **Target:** `{target}`")
-    parts.append(f"- **Date:** {date}")
-    parts.append(f"- **Tool:** AisoSec Audit v{report_data.get('tool', '')}")
+    parts.append("**Authorized security assessment report**")
     parts.append("")
-
-    # 1. Executive Summary
+    parts.append(f"- Target: {target}")
+    parts.append(f"- Assessment time: {date}")
+    parts.append(f"- Assessment type: {auth_summary}")
+    parts.append(f"- Overall risk: {risk_summary}")
+    parts.append("")
     parts.append("## Executive Summary")
     parts.append("")
-    techs = general.get("technologies", []) or []
-    tech_str = ", ".join(_tech_str(t) for t in techs) or "-"
-    overview_rows = [
-        ["Status HTTP", str(general.get("status_code", "-"))],
-        ["Server", str(general.get("server", "-"))],
-        ["Technologies", tech_str],
-        ["Findings (FINDINGS)", str(len(findings))],
-        ["Open Ports (nmap)", str(len(nmap_ports))],
-        ["Targeted NSE Results", str(len(nmap_nse))],
-        ["Vulnerabilities Nuclei", str(len(nuclei_findings_list))],
-        ["URLs spider", str(spider.get("total_urls", 0))],
-        ["Subdomains (vhosts)", str(len(vhosts))],
-        ["Discovered Directories", str(len(dir_hits))],
-        ["API Endpoints", str(len(api_endpoints))],
-        ["Users", str(len(users))],
-        ["Emails", str(len(emails))],
-        ["Valid Credentials", str(len(creds))],
-        ["WordPress vulnerabilities", str(len(wordpress.get("vulnerabilities") or []))],
-        ["Users AD (LDAP)", str(len(ad_ldap.get("users") or []))],
-        ["AS-REP roastable", str(len(asrep_hashes))],
-        ["Kerberoastable SPNs", str(len(kerberoast_hashes))],
-        ["Credentials AD (NXC)", str(len(ad_creds))],
-        ["Source code findings", str(len(src_findings))],
-    ]
-    parts.append(_md_table(["Field", "Value"], overview_rows))
+    parts.append(f"This report documents an authorized security assessment for the stated target. {risk_text} The assessment highlights the most relevant issues and presents informational observations without exaggeration.")
     parts.append("")
-
-    # 2. Security Headers
-    sec_header_names = [
-        "Strict-Transport-Security", "Content-Security-Policy",
-        "X-Frame-Options", "X-Content-Type-Options",
-        "Referrer-Policy", "Permissions-Policy",
-    ]
-    headers = (general.get("headers") or {})
-    sec_rows = []
-    for h in sec_header_names:
-        v = headers.get(h) or headers.get(h.lower()) or "-"
-        present = v != "-"
-        sec_rows.append([h, "OK" if present else "MISSING", v])
-    parts.append("## Security Headers")
+    parts.append("## Assessment Scope")
     parts.append("")
-    parts.append(_md_table(["Header", "Status", "Value"], sec_rows))
+    parts.extend(scope_lines)
     parts.append("")
-
-    # 3. Cookies
-    cookies = general.get("cookies") or []
-    if cookies:
-        parts.append("## Cookies detected")
-        parts.append("")
-        parts.append(_md_table(["Cookie"], [[c] for c in cookies]))
-        parts.append("")
-
-    # 4. HTTP methods + robots
-    misc_rows = []
-    if http_methods:
-        misc_rows.append(["Allowed HTTP Methods", ", ".join(http_methods)])
-    if robots_paths:
-        misc_rows.append([f"Paths robots/sitemap ({len(robots_paths)})", ", ".join(robots_paths[:15])])
-    if misc_rows:
-        parts.append("## Additional HTTP Information")
-        parts.append("")
-        parts.append(_md_table(["Category", "Value"], misc_rows))
-        parts.append("")
-
-    # 4b. Nmap (puertos abiertos)
-    if nmap_ports:
-        parts.append(f"## Port scan (Nmap) ({len(nmap_ports)})")
-        parts.append("")
-        if nmap_data.get("command"):
-            parts.append(f"- **Command:** `{nmap_data['command']}`")
-        if nmap_data.get("host"):
-            parts.append(f"- **Host:** `{nmap_data['host']}`")
-        if nmap_data.get("hostnames"):
-            parts.append(f"- **Hostnames:** {', '.join(nmap_data['hostnames'])}")
-        parts.append("")
-        nm_rows = []
-        for p in nmap_ports:
-            vparts = [p.get("product", ""), p.get("version", ""), p.get("extrainfo", "")]
-            version_str = " ".join(v for v in vparts if v).strip() or "-"
-            nm_rows.append([
-                f"{p.get('port', '-')}/{p.get('protocol', '')}",
-                str(p.get("state", "-")),
-                str(p.get("service", "") or "-"),
-                version_str,
-            ])
-        parts.append(_md_table(["Port", "Status", "Service", "Version"], nm_rows))
-        parts.append("")
-
-    if nmap_nse:
-        parts.append(f"## Nmap Targeted NSE ({len(nmap_nse)})")
-        parts.append("")
-        if (nmap_data.get("nse") or {}).get("command"):
-            parts.append(f"- **Command:** `{(nmap_data.get('nse') or {}).get('command')}`")
-            parts.append("")
-        rows = [[
-            f"{item.get('port', '-')}/{item.get('protocol', '')}",
-            str(item.get("service") or "-"),
-            str(item.get("script_id") or "-"),
-            str(item.get("output") or "-"),
-        ] for item in nmap_nse]
-        parts.append(_md_table(["Port", "Service", "Script", "Output"], rows))
-        parts.append("")
-
-    # 5. Spider
-    if spider:
-        parts.append("## Spidering")
-        parts.append("")
-        spider_rows = [
-            ["Total URLs", str(spider.get("total_urls", 0))],
-            ["Unique Parameters", str(spider.get("total_params", 0))],
-            ["Forms", str(spider.get("total_forms", 0))],
-        ]
-        parts.append(_md_table(["Metric", "Value"], spider_rows))
-        parts.append("")
-        sample_urls = spider.get("sample_urls") or []
-        if sample_urls:
-            parts.append(f"### Discovered URLs ({len(sample_urls)})")
-            parts.append("")
-            parts.append(_md_table(["URL"], [[u] for u in sample_urls]))
-            parts.append("")
-
-    # 5b. Source Code Analysis
-    if src_code:
-        sev_stats = src_code.get("summary") or {}
-        parts.append("## Source Code Analysis")
-        parts.append("")
-        code_overview = [
-            ["Pages Analyzed", str(src_code.get("pages_analyzed", 0))],
-            ["JS/JSON Resources Analyzed", str(src_code.get("assets_analyzed", 0))],
-            ["Total findings", str(len(src_findings))],
-            ["Critical", str(sev_stats.get("critical", 0))],
-            ["High", str(sev_stats.get("high", 0))],
-            ["Medium", str(sev_stats.get("medium", 0))],
-            ["Low", str(sev_stats.get("low", 0))],
-        ]
-        parts.append(_md_table(["Metric", "Value"], code_overview))
-        parts.append("")
-        if src_findings:
-            sorted_src = sorted(
-                src_findings,
-                key=lambda x: SEV_ORDER.get(x.get("severity", "low"), 9),
-            )
-            parts.append(f"### Source Code Findings Detail ({len(sorted_src)})")
-            parts.append("")
-            rows = [[
-                (f.get("severity") or "").upper(),
-                str(f.get("type", "-")),
-                str(f.get("value", "-")),
-                str(f.get("url", "-")),
-            ] for f in sorted_src]
-            parts.append(_md_table(["Severity", "Type", "Detected Value", "URL"], rows))
-            parts.append("")
-
-    # 6a. Subdomains (vhosts)
-    if vhosts:
-        parts.append(f"## Discovered Subdomains (vhosts) ({len(vhosts)})")
-        parts.append("")
-        rows = [[str(v.get("status", "-")),
-                 str(v.get("fqdn") or v.get("subdomain", "-")),
-                 str(v.get("size", "-"))]
-                for v in vhosts]
-        parts.append(_md_table(["Status", "VHost", "Size"], rows))
-        parts.append("")
-
-    # 6b. Directories
-    if dir_hits:
-        parts.append(f"## Discovered Directories ({len(dir_hits)})")
-        parts.append("")
-        rows = [[str(h.get("status", "-")), str(h.get("url", "-")), str(h.get("size", "-"))]
-                for h in dir_hits]
-        parts.append(_md_table(["Status", "URL", "Size"], rows))
-        parts.append("")
-
-    # 6c. WordPress / WPScan
-    if wordpress:
-        wp_version = wordpress.get("version") or {}
-        wp_theme = wordpress.get("main_theme") or {}
-        wp_users = wordpress.get("users") or []
-        wp_plugins = wordpress.get("plugins") or []
-        wp_vulns = wordpress.get("vulnerabilities") or []
-        wp_creds = wordpress.get("credentials") or []
-        parts.append("## WordPress / WPScan")
-        parts.append("")
-        wp_rows = [
-            ["Detected", "Yes" if wordpress.get("detected") else "Not confirmed"],
-            ["Version", str(wp_version.get("number") or "-")],
-            ["Version Status", str(wp_version.get("status") or "-")],
-            ["Main Theme", str(wp_theme.get("name") or "-")],
-            ["Detected Plugins", str(len(wp_plugins))],
-            ["Users WPScan", str(len(wp_users))],
-            ["Vulnerabilities", str(len(wp_vulns))],
-            ["Credentials WP", str(len(wp_creds))],
-        ]
-        parts.append(_md_table(["Field", "Value"], wp_rows))
-        parts.append("")
-        if wp_users:
-            parts.append("### Users WordPress")
-            parts.append("")
-            parts.append(_md_table(["User", "Name"], [[u.get("username", "-"), u.get("name", "-")] for u in wp_users]))
-            parts.append("")
-        if wp_vulns:
-            parts.append("### Vulnerabilities WordPress")
-            parts.append("")
-            rows = [[
-                v.get("component_type", "-"),
-                v.get("component", "-"),
-                v.get("title", "-"),
-                v.get("fixed_in", "-"),
-            ] for v in wp_vulns]
-            parts.append(_md_table(["Type", "Component", "Title", "Fixed in"], rows))
-            parts.append("")
-
-    if active_directory:
-        ad_ldap = active_directory.get("ldap") or {}
-        ad_nxc = active_directory.get("nxc") or {}
-        ad_kb = active_directory.get("kerbrute") or {}
-        ad_imp = active_directory.get("impacket") or {}
-        ad_creds = (ad_nxc.get("bruteforce") or {}).get("credentials", []) or []
-        asrep_hashes = (ad_imp.get("asrep_roast") or {}).get("hashes", []) or []
-        kerberoast_hashes = (ad_imp.get("kerberoast") or {}).get("hashes", []) or []
-        parts.append("## Active Directory")
-        parts.append("")
-        ad_rows = [
-            ["Domain Controller", str(active_directory.get("target") or "-")],
-            ["Domain", str(active_directory.get("domain") or "-")],
-            ["Base DN", str(active_directory.get("base_dn") or "-")],
-            ["Mode", str(active_directory.get("auth_mode") or "-")],
-            ["Valid Kerbrute users", str(len(ad_kb.get("valid_users") or []))],
-            ["AS-REP roastable", str(len(asrep_hashes))],
-            ["Kerberoastable SPNs", str(len(kerberoast_hashes))],
-            ["LDAP users", str(len(ad_ldap.get("users") or []))],
-            ["LDAP groups", str(len(ad_ldap.get("groups") or []))],
-            ["LDAP computers", str(len(ad_ldap.get("computers") or []))],
-            ["NXC credentials", str(len(ad_creds))],
-        ]
-        parts.append(_md_table(["Field", "Value"], ad_rows))
-        parts.append("")
-        if ad_kb.get("valid_users"):
-            parts.append("### Valid Kerbrute users")
-            parts.append("")
-            parts.append(_md_table(["User"], [[u] for u in ad_kb.get("valid_users", [])]))
-            parts.append("")
-        if ad_ldap.get("users"):
-            parts.append("### LDAP users")
-            parts.append("")
-            rows = [[u.get("username", "-"), u.get("upn", "-"), u.get("cn", "-"), ", ".join(u.get("memberOf") or [])]
-                    for u in ad_ldap.get("users", [])]
-            parts.append(_md_table(["User", "UPN", "CN", "Groups"], rows))
-            parts.append("")
-        if ad_ldap.get("groups"):
-            parts.append("### LDAP groups")
-            parts.append("")
-            rows = [[g.get("name", "-"), g.get("description", "-"), str(len(g.get("members") or []))]
-                    for g in ad_ldap.get("groups", [])]
-            parts.append(_md_table(["Group", "Description", "Members"], rows))
-            parts.append("")
-        if ad_ldap.get("computers"):
-            parts.append("### LDAP computers")
-            parts.append("")
-            rows = [[c.get("name", "-"), c.get("os", "-"), c.get("os_version", "-")]
-                    for c in ad_ldap.get("computers", [])]
-            parts.append(_md_table(["Computer", "SO", "Version"], rows))
-            parts.append("")
-        if ad_creds:
-            parts.append("### Credentials AD valid (NXC)")
-            parts.append("")
-            parts.append(_md_table(["User", "Password"], [[c.get("username", "-"), c.get("password", "-")] for c in ad_creds]))
-            parts.append("")
-        if asrep_hashes:
-            parts.append("### AS-REP Roasting (impacket-GetNPUsers)")
-            parts.append("")
-            parts.append(_md_table(["User", "Hash"], [[h.get("username", "-"), h.get("hash", "-")] for h in asrep_hashes]))
-            parts.append("")
-        if kerberoast_hashes:
-            parts.append("### Kerberoasting (impacket-GetUserSPNs)")
-            parts.append("")
-            parts.append(_md_table(["User/SPN", "Hash"], [[h.get("username", "-"), h.get("hash", "-")] for h in kerberoast_hashes]))
-            parts.append("")
-        raw_commands = active_directory.get("raw_commands") or []
-        if raw_commands:
-            parts.append("### Raw AD Tool Output")
-            parts.append("")
-            for cmd in raw_commands:
-                parts.append(f"#### {cmd.get('label', 'command')}")
-                parts.append("")
-                parts.append(f"- **Command:** `{cmd.get('command', '-')}`")
-                parts.append(f"- **Return code:** `{cmd.get('returncode', '-')}`")
-                parts.append("")
-                parts.append("```text")
-                parts.append(str(cmd.get("output", "") or "").strip() or "-")
-                parts.append("```")
-                parts.append("")
-
-    # 7. API endpoints
-    if api_endpoints:
-        parts.append(f"## Discovered API Endpoints ({len(api_endpoints)})")
-        parts.append("")
-        rows = [[str(ep.get("status", "-")),
-                 str(ep.get("endpoint") or ep.get("url", "-")),
-                 str(ep.get("content_type", "-"))]
-                for ep in api_endpoints]
-        parts.append(_md_table(["Status", "Endpoint", "Content-Type"], rows))
-        parts.append("")
-
-    # 8. Users and emails
-    if users or emails:
-        parts.append("## Discovered Users and Emails")
-        parts.append("")
-        ue_rows = []
-        if users:
-            ue_rows.append(["Users", ", ".join(users)])
-        if emails:
-            ue_rows.append(["Emails", ", ".join(emails)])
-        parts.append(_md_table(["Category", "Values"], ue_rows))
-        parts.append("")
-
-    # 9b. advanced tests (SSRF/SSTI/XXE/CRLF/Smuggling/Cache)
-    adv_sec_md = scan_data.get("advanced_security") or {}
-    if adv_sec_md:
-        adv_md_ssrf = adv_sec_md.get("ssrf") or []
-        adv_md_ssti = adv_sec_md.get("ssti") or []
-        adv_md_xxe = adv_sec_md.get("xxe") or []
-        adv_md_crlf = adv_sec_md.get("crlf") or []
-        adv_md_smuggling = adv_sec_md.get("smuggling") or []
-        adv_md_cache = adv_sec_md.get("cache_poisoning") or []
-        parts.append("## Advanced Security Tests")
-        parts.append("")
-        parts.append(_md_table(["Module", "Findings"], [
-            ["SSRF", str(len(adv_md_ssrf))],
-            ["SSTI", str(len(adv_md_ssti))],
-            ["XXE", str(len(adv_md_xxe))],
-            ["CRLF", str(len(adv_md_crlf))],
-            ["HTTP Request Smuggling", str(len(adv_md_smuggling))],
-            ["Cache Poisoning", str(len(adv_md_cache))],
-        ]))
-        parts.append("")
-        if adv_md_ssrf:
-            parts.append(f"### SSRF ({len(adv_md_ssrf)})")
-            parts.append("")
-            parts.append(_md_table(["Type", "Vector", "Payload/Value", "HTTP"],
-                [[r.get("type","ssrf"), r.get("param") or r.get("header") or "-",
-                  (r.get("payload") or r.get("value") or "")[:80], str(r.get("status","-"))]
-                 for r in adv_md_ssrf]))
-            parts.append("")
-        if adv_md_ssti:
-            parts.append(f"### SSTI ({len(adv_md_ssti)})")
-            parts.append("")
-            parts.append(_md_table(["URL", "Parameter", "Engine"],
-                [[r.get("url","-")[:80], r.get("param","-"), r.get("engine","-")] for r in adv_md_ssti]))
-            parts.append("")
-        if adv_md_xxe:
-            parts.append(f"### XXE ({len(adv_md_xxe)})")
-            parts.append("")
-            parts.append(_md_table(["URL", "Content-Type", "Status"],
-                [[r.get("url","-")[:80], r.get("content_type","-"), r.get("note","confirmed")] for r in adv_md_xxe]))
-            parts.append("")
-        if adv_md_crlf:
-            parts.append(f"### CRLF Injection ({len(adv_md_crlf)})")
-            parts.append("")
-            parts.append(_md_table(["Vector", "URL/Param", "Payload"],
-                [[r.get("vector","-"), (r.get("param") or r.get("url") or "-")[:60], r.get("payload","-")[:50]]
-                 for r in adv_md_crlf]))
-            parts.append("")
-        if adv_md_smuggling:
-            parts.append(f"### HTTP Request Smuggling ({len(adv_md_smuggling)})")
-            parts.append("")
-            parts.append(_md_table(["Tool/Type", "Detail"],
-                [[(r.get("tool") or r.get("type") or "-"), (r.get("note") or r.get("output_snippet") or "-")[:100]]
-                 for r in adv_md_smuggling]))
-            parts.append("")
-        if adv_md_cache:
-            parts.append(f"### Cache Poisoning ({len(adv_md_cache)})")
-            parts.append("")
-            parts.append(_md_table(["Header", "Injected value", "Status"],
-                [[r.get("header","-"), r.get("value","-")[:50], "Confirmed" if r.get("confirmed") else "Reflected"]
-                 for r in adv_md_cache]))
-            parts.append("")
-    # 9. Injection
-    if injection.get("executed"):
-        parts.append("## Injection Testing")
-        parts.append("")
-        inj_rows = [
-            ["Detected Forms", str(injection.get("forms_found", 0))],
-            ["Detected GET Parameters", str(injection.get("url_params_found", 0))],
-            ["Tested GET Parameters", str(len(injection.get("tested_get_params", [])))],
-            ["Tested Form Inputs", str(len(injection.get("tested_form_inputs", [])))],
-        ]
-        parts.append(_md_table(["Metric", "Value"], inj_rows))
-        parts.append("")
-
-    # 10. Valid Credentials
-    if creds:
-        parts.append("## Valid Credentials Found")
-        parts.append("")
-        rows = []
-        for c in creds:
-            user = c.get("username") if isinstance(c, dict) else str(c)
-            pwd = c.get("password") if isinstance(c, dict) else "-"
-            rows.append([str(user), str(pwd)])
-        parts.append(_md_table(["User", "Password"], rows))
-        parts.append("")
-
-    # 11. Nuclei
-    if nuclei_summary:
-        parts.append("## Vulnerabilities by severity (Nuclei)")
-        parts.append("")
-        rows = []
-        for sev in sorted(nuclei_summary.keys(), key=lambda s: SEV_ORDER.get(s, 99)):
-            tids = nuclei_summary[sev]
-            rows.append([sev.upper(), str(len(tids)), ", ".join(sorted(set(map(str, tids))))])
-        parts.append(_md_table(["Severity", "Count", "Unique templates"], rows))
-        parts.append("")
-
-    relevant_nuclei = [n for n in nuclei_findings_list
-                       if (n.get('severity') or '').lower() in ('critical', 'high', 'medium', 'low')]
-    if relevant_nuclei:
-        sorted_rel = sorted(relevant_nuclei,
-                            key=lambda x: (SEV_ORDER.get((x.get('severity') or 'unknown').lower(), 99),
-                                           str(x.get('template_id', ''))))
-        parts.append(f"## Relevant Nuclei Findings ({len(sorted_rel)})")
-        parts.append("")
-        rows = [[(n.get('severity') or '').upper(),
-                 str(n.get('template_id', '-')),
-                 str(n.get('name', '-')),
-                 str(n.get('url', '-'))]
-                for n in sorted_rel]
-        parts.append(_md_table(["Severity", "Template", "Name", "URL"], rows))
-        parts.append("")
-
-    # 12. Classified Findings (FINDINGS)
-    if findings:
-        cats = {}
-        for f in findings:
-            text = _finding_text(f)
-            m = re.match(r'^\[([^\]]+)\]', text)
-            cat = m.group(1) if m else "OTHER"
-            cats.setdefault(cat, []).append(text)
-        parts.append(f"## Classified Findings (total: {len(findings)})")
-        parts.append("")
-        cat_rows = [[cat, str(len(cats[cat]))] for cat in sorted(cats.keys())]
-        parts.append(_md_table(["Category", "Count"], cat_rows))
-        parts.append("")
-        parts.append(f"### Findings detail ({len(findings)})")
-        parts.append("")
-        rows = []
-        for f in findings:
-            text = _finding_text(f)
-            m = re.match(r'^\[([^\]]+)\]\s*(.*)', text)
-            if m:
-                rows.append([m.group(1), m.group(2)])
-            else:
-                rows.append(["OTHER", text])
-        parts.append(_md_table(["Category", "Detail"], rows))
-        parts.append("")
-
-    parts.append("---")
+    parts.append("## Authorization & Limitations")
     parts.append("")
-    parts.append("_Automatically generated by AisoSec Audit._")
+    parts.append("This report reflects an authorized security assessment. The review was limited to the observable environment and the approved scope. No destructive activity or intrusive testing beyond the authorized boundaries was included.")
+    parts.append(f"The assessment was {'' if AUTHENTICATED else 'not '}authenticated. Findings are based on the evidence available during the review.")
+    parts.append("")
+    parts.append("## Methodology")
+    parts.append("")
+    parts.append("The assessment combined passive review, network reconnaissance, HTTP inspection, directory discovery, Spidering, source code review, and targeted scanning. Findings were recorded from the collected evidence without introducing additional intrusive activity.")
+    parts.append("")
+    parts.append("## Risk Overview")
+    parts.append("")
+    parts.append(f"- Critical: {sev_counts['critical']}")
+    parts.append(f"- High: {sev_counts['high']}")
+    parts.append(f"- Medium: {sev_counts['medium']}")
+    parts.append(f"- Low: {sev_counts['low']}")
+    parts.append(f"- Informational: {sev_counts['info']}")
+    parts.append("")
+    parts.append("## Findings Summary")
+    parts.append("")
+    parts.extend(finding_lines)
+    parts.append("")
+    parts.append("## Evidence")
+    parts.append("")
+    parts.extend(evidence_lines)
+    parts.append("")
+    parts.append("## Remediation Plan")
+    parts.append("")
+    parts.extend(remediation_items)
+    parts.append("")
+    parts.append("## Technical Appendix")
+    parts.append("")
+    parts.append(f"- Observed technologies: {', '.join(str(t.get('name', t)) for t in technologies if isinstance(t, dict)) or 'None recorded'}")
+    parts.append(f"- Discovered directories: {len(directory_hits)}")
+    parts.append(f"- API endpoints: {len(api_endpoints)}")
+    parts.append(f"- Subdomains / vhosts: {len(vhosts)}")
+    parts.append(f"- Users and emails: {', '.join(users[:10]) if users else 'None recorded'} / {', '.join(emails[:10]) if emails else 'None recorded'}")
+    parts.append(f"- WordPress: {'Detected' if wordpress.get('detected') else 'Not confirmed'}")
+    parts.append(f"- Active directory data: {'Available' if active_directory else 'Not collected'}")
+    parts.append("")
+    parts.append("_Generated by AisoSec Audit._")
     return "\n".join(parts)
+
+
+def _build_txt_report(report_data):
+    """Build a professional plain-text report."""
+    scan_data = report_data.get("scan_data", {}) or {}
+    findings = report_data.get("findings", []) or []
+    general = scan_data.get("general", {}) or {}
+    headers = general.get("headers") or {}
+    technologies = general.get("technologies", []) or []
+    nmap_data = scan_data.get("nmap", {}) or {}
+    nmap_ports = nmap_data.get("ports", []) or []
+    nuclei_findings = scan_data.get("nuclei_findings", []) or []
+    src_code = scan_data.get("source_code_analysis", {}) or {}
+    src_findings = src_code.get("findings", []) or []
+    spider = scan_data.get("spider", {}) or {}
+    required_headers = [
+        "Strict-Transport-Security",
+        "Content-Security-Policy",
+        "X-Frame-Options",
+        "X-Content-Type-Options",
+        "Referrer-Policy",
+        "Permissions-Policy",
+    ]
+    missing_headers = [h for h in required_headers if not (headers.get(h) or headers.get(h.lower()))]
+
+    def _normalize_severity(value):
+        text = (value or "info").strip().lower()
+        return text if text in {"critical", "high", "medium", "low", "info"} else "info"
+
+    sev_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0}
+    for item in findings:
+        sev = _normalize_severity((item.get("severity") if isinstance(item, dict) else None) or "info")
+        sev_counts[sev] += 1
+    for item in nuclei_findings:
+        sev = _normalize_severity(item.get("severity") or "info")
+        sev_counts[sev] += 1
+    for item in src_findings:
+        sev = _normalize_severity(item.get("severity") or "low")
+        sev_counts[sev] += 1
+
+    lines = []
+    lines.append("AisoSec Audit")
+    lines.append("Authorized security assessment report")
+    lines.append("")
+    lines.append(f"Target: {report_data.get('target', '-')}")
+    lines.append(f"Timestamp: {report_data.get('date', '-')}")
+    lines.append(f"Assessment type: {'Authenticated assessment' if AUTHENTICATED else 'Unauthenticated assessment'}")
+    lines.append("")
+    lines.append("Executive Summary")
+    lines.append("-----------------")
+    lines.append("This report documents an authorized security assessment. Findings are presented in a professional and factual manner.")
+    lines.append("")
+    lines.append("Assessment Scope")
+    lines.append("----------------")
+    lines.append(f"HTTP status: {general.get('status_code', '-')}")
+    lines.append(f"Technologies: {', '.join(str(t.get('name', t)) for t in technologies if isinstance(t, dict)) or 'None recorded'}")
+    lines.append(f"Observed ports: {', '.join(str(p.get('port', '-')) for p in nmap_ports if isinstance(p, dict)) or 'None recorded'}")
+    lines.append(f"Headers: {', '.join(headers.keys()) if headers else 'No headers recorded'}")
+    lines.append("")
+    lines.append("Authorization & Limitations")
+    lines.append("---------------------------")
+    lines.append("This report reflects an authorized security assessment. The review was limited to the observable environment and approved scope.")
+    lines.append(f"Assessment was {'authenticated' if AUTHENTICATED else 'unauthenticated'}.")
+    lines.append("")
+    lines.append("Methodology")
+    lines.append("-----------")
+    lines.append("Passive review, network reconnaissance, HTTP inspection, directory discovery, Spidering, source code review, and targeted scanning were used.")
+    lines.append("")
+    lines.append("Risk Overview")
+    lines.append("-------------")
+    lines.append(f"Critical: {sev_counts['critical']}")
+    lines.append(f"High: {sev_counts['high']}")
+    lines.append(f"Medium: {sev_counts['medium']}")
+    lines.append(f"Low: {sev_counts['low']}")
+    lines.append(f"Informational: {sev_counts['info']}")
+    lines.append("")
+    lines.append("Findings Summary")
+    lines.append("----------------")
+    for item in findings:
+        if isinstance(item, dict):
+            severity = (item.get("severity") or "info").strip().upper() or "INFO"
+            title = item.get("name") or "Finding"
+            detail = item.get("detail") or ""
+            lines.append(f"- [{severity}] {title}: {detail}".rstrip())
+        else:
+            lines.append(f"- {item}")
+    if missing_headers:
+        lines.append(f"- [LOW] Security header hardening opportunity: {', '.join(missing_headers)}")
+    if nuclei_findings:
+        lines.append("- [INFO] Informational exposure / technology discovery: Nuclei informational findings were grouped as discovery observations.")
+    lines.append("")
+    lines.append("Evidence")
+    lines.append("--------")
+    lines.append(f"Target: {report_data.get('target', '-')}")
+    lines.append(f"Timestamp: {report_data.get('date', '-')}")
+    lines.append(f"HTTP status: {general.get('status_code', '-')}")
+    lines.append(f"Technologies: {', '.join(str(t.get('name', t)) for t in technologies if isinstance(t, dict)) or 'None recorded'}")
+    lines.append(f"Ports: {', '.join(str(p.get('port', '-')) for p in nmap_ports if isinstance(p, dict)) or 'None recorded'}")
+    lines.append(f"Headers: {', '.join(headers.keys()) if headers else 'No headers recorded'}")
+    lines.append(f"Nuclei findings: {len(nuclei_findings)}")
+    lines.append(f"Source code findings: {len(src_findings)}")
+    lines.append(f"Spidered sample URLs: {', '.join(spider.get('sample_urls', [])[:5]) if spider.get('sample_urls') else 'None recorded'}")
+    lines.append("")
+    lines.append("Remediation Plan")
+    lines.append("----------------")
+    lines.append("- Implement missing security headers where appropriate.")
+    lines.append("- Prioritize the highest-severity issues and verify the remediations.")
+    lines.append("- Reduce public exposure to unnecessary services and paths.")
+    lines.append("- Remove or rotate any exposed credentials or secrets.")
+    lines.append("")
+    lines.append("Technical Appendix")
+    lines.append("------------------")
+    lines.append(f"Observed technologies: {', '.join(str(t.get('name', t)) for t in technologies if isinstance(t, dict)) or 'None recorded'}")
+    lines.append(f"Source code findings: {len(src_findings)}")
+    lines.append(f"Nuclei findings: {len(nuclei_findings)}")
+    lines.append("Generated by AisoSec Audit")
+    return "\n".join(lines)
 
 
 def save_report(output_file=None):
@@ -2971,6 +2043,7 @@ def save_report(output_file=None):
         "tool": VERSION,
         "target": TARGET_URL,
         "date": time.strftime('%Y-%m-%d %H:%M:%S'),
+        "authenticated": AUTHENTICATED,
         "findings": list(FINDINGS),
         "scan_data": _to_serializable(SCAN_DATA),
     }
@@ -2979,250 +2052,9 @@ def save_report(output_file=None):
     errors = []
     try:
         with open(txt_file, 'w', encoding='utf-8') as f:
-            f.write(f"AisoSec Audit v{VERSION} - Security Assessment Report\n")
-            f.write(f"Target : {TARGET_URL}\n")
-            f.write(f"Date    : {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(f"Auth mode: {'Yes' if AUTHENTICATED else 'No'}\n")
-            f.write("=" * 60 + "\n\n")
-
-            f.write("[SUMMARY]\n")
-            for k, v in scan_stats.items():
-                f.write(f"- {k}: {v}\n")
-            f.write("\n")
-
-            general = report_data["scan_data"].get("general", {})
-            f.write("[GENERAL INFORMATION]\n")
-            f.write(f"- Status: {general.get('status_code', 'N/A')}\n")
-            f.write(f"- Server: {general.get('server', 'N/A')}\n")
-            techs = general.get('technologies', [])
-            if techs:
-                if isinstance(techs[0], dict):
-                    tech_str = ', '.join(f"{t.get('name','')}{'['+t.get('detail','')+']' if t.get('detail') else ''}" for t in techs)
-                else:
-                    tech_str = ', '.join(str(t) for t in techs)
-            else:
-                tech_str = 'N/A'
-            f.write(f"- Technologies: {tech_str}\n")
-            f.write(f"- HTTP methods: {', '.join(report_data['scan_data'].get('http_methods', [])) or 'N/A'}\n")
-            f.write(f"- robots/sitemap: {', '.join(report_data['scan_data'].get('robots_paths', [])) or 'N/A'}\n\n")
-
-            nmap_data = report_data['scan_data'].get('nmap') or {}
-            nmap_ports = nmap_data.get('ports') or []
-            f.write("[PORT SCAN (NMAP)]\n")
-            if nmap_data.get('command'):
-                f.write(f"- Command: {nmap_data['command']}\n")
-            if nmap_data.get('host'):
-                f.write(f"- Host: {nmap_data['host']}\n")
-            if nmap_ports:
-                for p in nmap_ports:
-                    parts = [p.get('product', ''), p.get('version', ''), p.get('extrainfo', '')]
-                    version_str = ' '.join(v for v in parts if v).strip()
-                    f.write(
-                        f"- {p.get('port')}/{p.get('protocol')} [{p.get('state', '')}] "
-                        f"{p.get('service', '') or '?'}"
-                        + (f" — {version_str}" if version_str else "")
-                        + "\n"
-                    )
-            else:
-                f.write("- No visible ports\n")
-            f.write("\n")
-
-            nse_results = nmap_data.get('nse_results') or []
-            f.write("[TARGETED NMAP NSE]\n")
-            nse_cmd = (nmap_data.get('nse') or {}).get('command')
-            if nse_cmd:
-                f.write(f"- Command: {nse_cmd}\n")
-            if nse_results:
-                for item in nse_results:
-                    f.write(
-                        f"- {item.get('port')}/{item.get('protocol')} {item.get('service') or '?'} "
-                        f"{item.get('script_id')}: {item.get('output', '').splitlines()[0] if item.get('output') else ''}\n"
-                    )
-            else:
-                f.write("- No NSE results\n")
-            f.write("\n")
-
-            f.write("[ENUMERATION]\n")
-            f.write(f"- Users: {', '.join(report_data['scan_data'].get('users', [])) or 'N/A'}\n")
-            f.write(f"- Emails: {', '.join(report_data['scan_data'].get('emails', [])) or 'N/A'}\n\n")
-
-            wordpress_data = report_data['scan_data'].get('wordpress') or {}
-            f.write("[WORDPRESS / WPSCAN]\n")
-            if wordpress_data:
-                wp_version = wordpress_data.get('version') or {}
-                wp_theme = wordpress_data.get('main_theme') or {}
-                f.write(f"- Detected: {'Yes' if wordpress_data.get('detected') else 'Not confirmed'}\n")
-                f.write(f"- Version: {wp_version.get('number') or 'N/A'} ({wp_version.get('status') or 'unknown status'})\n")
-                f.write(f"- Main Theme: {wp_theme.get('name') or 'N/A'}\n")
-                f.write(f"- Detected Plugins: {len(wordpress_data.get('plugins') or [])}\n")
-                f.write(f"- Users WPScan: {', '.join(u.get('username','') for u in wordpress_data.get('users', []) if isinstance(u, dict)) or 'N/A'}\n")
-                wp_vulns = wordpress_data.get('vulnerabilities') or []
-                f.write(f"- Vulnerabilities: {len(wp_vulns)}\n")
-                for vuln in wp_vulns:
-                    f.write(
-                        f"  * [{vuln.get('component_type')}] {vuln.get('component')}: "
-                        f"{vuln.get('title')}"
-                        + (f" (fixed in {vuln.get('fixed_in')})" if vuln.get('fixed_in') else "")
-                        + "\n"
-                    )
-                wp_creds = wordpress_data.get('credentials') or []
-                if wp_creds:
-                    f.write("- Credentials WPScan:\n")
-                    for cred in wp_creds:
-                        f.write(f"  * {cred.get('username')}:{cred.get('password')}\n")
-            else:
-                f.write("- Not run\n")
-            f.write("\n")
-
-            spider = report_data["scan_data"].get("spider", {})
-            f.write("[SPIDERING]\n")
-            f.write(f"- Total URLs: {spider.get('total_urls', 0)}\n")
-            f.write(f"- Total parameters: {spider.get('total_params', 0)}\n")
-            f.write(f"- Total forms: {spider.get('total_forms', 0)}\n")
-            for u in spider.get('sample_urls', []):
-                f.write(f"  * {u}\n")
-            f.write("\n")
-
-            f.write("[ENDPOINTS API]\n")
-            for ep in report_data['scan_data'].get('api_endpoints', []):
-                f.write(f"- [{ep.get('status')}] {ep.get('url')} ({ep.get('content_type', '')})\n")
-            f.write("\n")
-
-            f.write("[SUBDOMAINS (VHOSTS)]\n")
-            vhosts_list = report_data['scan_data'].get('vhosts', [])
-            if vhosts_list:
-                for v in vhosts_list:
-                    fqdn = v.get('fqdn') or v.get('subdomain', '')
-                    f.write(f"- [{v.get('status')}] {fqdn} size={v.get('size', 'N/A')}\n")
-            else:
-                f.write("- None\n")
-            f.write("\n")
-
-            f.write("[DISCOVERED DIRECTORIES]\n")
-            for hit in report_data['scan_data'].get('directory_hits', []):
-                f.write(f"- [{hit.get('status')}] {hit.get('url')} size={hit.get('size', 'N/A')}\n")
-            f.write("\n")
-
-            f.write("[BRUTE FORCE CREDENTIALS]\n")
-            creds = report_data['scan_data'].get('bruteforce_credentials', [])
-            if creds:
-                for cred in creds:
-                    f.write(f"- {cred.get('username')}:{cred.get('password')}\n")
-            else:
-                f.write("- None\n")
-            f.write("\n")
-
-            src_code_data = report_data['scan_data'].get('source_code_analysis') or {}
-            src_code_findings = src_code_data.get('findings') or []
-            f.write("[SOURCE CODE ANALYSIS]\n")
-            f.write(f"- Pages Analyzed: {src_code_data.get('pages_analyzed', 0)}\n")
-            f.write(f"- JS/JSON Resources Analyzed: {src_code_data.get('assets_analyzed', 0)}\n")
-            f.write(f"- Findings: {len(src_code_findings)}\n")
-            sev_stats = src_code_data.get('summary') or {}
-            if sev_stats:
-                f.write(
-                    f"- Severity: CRITICAL={sev_stats.get('critical',0)} "
-                    f"HIGH={sev_stats.get('high',0)} "
-                    f"MEDIUM={sev_stats.get('medium',0)} "
-                    f"LOW={sev_stats.get('low',0)}\n"
-                )
-            if src_code_findings:
-                src_order = {'critical': 0, 'high': 1, 'medium': 2, 'low': 3}
-                for item in sorted(src_code_findings,
-                                   key=lambda x: src_order.get(x.get('severity', 'low'), 9)):
-                    f.write(
-                        f"- [{(item.get('severity') or '').upper()}] {item.get('type','')} "
-                        f"@ {item.get('url','')} | value: {item.get('value','')}\n"
-                    )
-            else:
-                f.write("- None\n")
-            f.write("\n")
-
-            ad_data = report_data['scan_data'].get('active_directory') or {}
-            f.write("[ACTIVE DIRECTORY]\n")
-            if ad_data:
-                ad_ldap = ad_data.get('ldap') or {}
-                ad_nxc = ad_data.get('nxc') or {}
-                ad_imp = ad_data.get('impacket') or {}
-                asrep_hashes = (ad_imp.get('asrep_roast') or {}).get('hashes') or []
-                kerberoast_hashes = (ad_imp.get('kerberoast') or {}).get('hashes') or []
-                ad_creds = ((ad_nxc.get('bruteforce') or {}).get('credentials') or [])
-                f.write(f"- DC: {ad_data.get('target') or 'N/A'}\n")
-                f.write(f"- Domain: {ad_data.get('domain') or 'N/A'}\n")
-                f.write(f"- Base DN: {ad_data.get('base_dn') or 'N/A'}\n")
-                f.write(f"- Mode: {ad_data.get('auth_mode') or 'N/A'}\n")
-                f.write(f"- Valid Kerbrute users: {len((ad_data.get('kerbrute') or {}).get('valid_users') or [])}\n")
-                f.write(f"- LDAP users: {len(ad_ldap.get('users') or [])}\n")
-                f.write(f"- LDAP groups: {len(ad_ldap.get('groups') or [])}\n")
-                f.write(f"- LDAP computers: {len(ad_ldap.get('computers') or [])}\n")
-                f.write(f"- AS-REP roastable: {len(asrep_hashes)}\n")
-                for h in asrep_hashes:
-                    f.write(f"  * {h.get('username') or '-'} {h.get('hash') or ''}\n")
-                f.write(f"- Kerberoastable SPNs: {len(kerberoast_hashes)}\n")
-                for h in kerberoast_hashes:
-                    f.write(f"  * {h.get('username') or '-'} {h.get('hash') or ''}\n")
-                f.write(f"- Credentials NXC: {len(ad_creds)}\n")
-                for cred in ad_creds:
-                    f.write(f"  * {cred.get('username')}:{cred.get('password')}\n")
-            else:
-                f.write("- Not run\n")
-            f.write("\n")
-
-            adv_sec_txt = report_data['scan_data'].get('advanced_security') or {}
-            f.write("[ADVANCED SECURITY TESTS]\n")
-            if adv_sec_txt:
-                for module in ["ssrf", "ssti", "xxe", "crlf", "smuggling", "cache_poisoning"]:
-                    hits = adv_sec_txt.get(module) or []
-                    f.write(f"- {module.upper()}: {len(hits)} finding(s)\n")
-                    for r in hits:
-                        if module == "ssrf":
-                            f.write(f"  * [{r.get('type','ssrf')}] vector={r.get('param') or r.get('header','')} payload={str(r.get('payload') or r.get('value',''))[:60]}\n")
-                        elif module == "ssti":
-                            f.write(f"  * url={r.get('url','')} param={r.get('param','')} engine={r.get('engine','')}\n")
-                        elif module == "xxe":
-                            f.write(f"  * url={r.get('url','')} content-type={r.get('content_type','')} status={r.get('note','confirmed')}\n")
-                        elif module == "crlf":
-                            f.write(f"  * vector={r.get('vector','')} payload={r.get('payload','')[:50]}\n")
-                        elif module == "smuggling":
-                            f.write(f"  * type={r.get('tool') or r.get('type','')} detail={str(r.get('note') or r.get('output_snippet',''))[:80]}\n")
-                        elif module == "cache_poisoning":
-                            confirmed = "confirmed" if r.get("confirmed") else "reflected"
-                            f.write(f"  * header={r.get('header','')} value={r.get('value','')[:40]} status={confirmed}\n")
-            else:
-                f.write("- Not run\n")
-            f.write("\n")
-
-            f.write("[FINDINGS]\n")
-            if FINDINGS:
-                for finding in FINDINGS:
-                    f.write(_finding_text(finding) + "\n")
-            else:
-                f.write("No findings recorded.\n")
-
-            nuclei_summary = report_data["scan_data"].get("nuclei_summary", {})
-            nuclei_findings_list = report_data["scan_data"].get("nuclei_findings", []) or []
-            sev_order = {'critical': 0, 'high': 1, 'medium': 2, 'low': 3, 'info': 4, 'unknown': 5}
-            if nuclei_summary:
-                f.write("\n[NUCLEI] Vulnerability summary:\n")
-                for sev in sorted(nuclei_summary.keys(), key=lambda s: sev_order.get(s, 99)):
-                    tids = nuclei_summary[sev]
-                    f.write(f"- {sev.upper()}: {len(tids)} findings ({', '.join(tids)})\n")
-            if nuclei_findings_list:
-                f.write("\n[NUCLEI] Findings detail:\n")
-                sorted_findings = sorted(
-                    nuclei_findings_list,
-                    key=lambda x: (sev_order.get((x.get('severity') or 'unknown'), 99),
-                                   x.get('template_id', ''))
-                )
-                for n in sorted_findings:
-                    sev = (n.get('severity') or 'unknown').upper()
-                    tid = n.get('template_id', '')
-                    name = n.get('name', '')
-                    url = n.get('url', '')
-                    f.write(f"- [{sev}] {tid}" + (f" — {name}" if name else "") +
-                            (f" @ {url}" if url else "") + "\n")
-
+            f.write(_build_txt_report(report_data))
         saved.append(("TXT", txt_file))
+
     except Exception as e:
         errors.append(("TXT", e))
 
