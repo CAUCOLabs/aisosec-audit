@@ -1509,6 +1509,82 @@ def _report_business_impact(sev_counts):
         "explanation": "The assessment identified observations that should be reviewed and documented.",
     }
 
+def _report_compliance_mappings(scan_data):
+    general = scan_data.get("general", {}) or {}
+    headers = general.get("headers") or {}
+    nmap_ports = (scan_data.get("nmap", {}) or {}).get("ports", []) or []
+    nuclei_findings = scan_data.get("nuclei_findings", []) or []
+    src_findings = (scan_data.get("source_code_analysis", {}) or {}).get("findings", []) or []
+    api_endpoints = scan_data.get("api_endpoints", []) or []
+    directory_hits = scan_data.get("directory_hits", []) or []
+    emails = scan_data.get("emails", []) or []
+    missing_headers = _report_missing_headers(headers)
+
+    mappings = []
+    if missing_headers:
+        mappings.append((
+            "Missing recommended security headers",
+            [
+                "Web security hardening",
+                "Secure configuration management",
+                "OWASP secure headers guidance",
+                "OWASP ASVS security configuration themes",
+                "ISO 27001 security configuration / technical controls",
+                "NIS2 cybersecurity risk management themes",
+                "DORA ICT risk management themes, when applicable",
+            ],
+        ))
+    if emails or src_findings:
+        mappings.append((
+            "Exposed emails or source code findings",
+            [
+                "Information exposure management",
+                "Data minimization and public exposure review",
+                "OWASP information disclosure themes",
+                "ISO 27001 information protection themes",
+                "GDPR data protection principles, when personal data is involved",
+            ],
+        ))
+    if nmap_ports:
+        mappings.append((
+            "Open ports",
+            [
+                "External attack surface management",
+                "Network exposure review",
+                "Asset inventory and service ownership",
+                "Secure configuration management",
+            ],
+        ))
+    if any((n.get("severity") or "info").strip().lower() == "info" for n in nuclei_findings if isinstance(n, dict)):
+        mappings.append((
+            "Nuclei informational findings",
+            [
+                "Technology exposure inventory",
+                "Vulnerability management triage",
+                "Security monitoring and review",
+            ],
+        ))
+    if api_endpoints:
+        mappings.append((
+            "API endpoints",
+            [
+                "API governance",
+                "Authentication and authorization review",
+                "Rate limiting and abuse prevention",
+                "Access control testing",
+            ],
+        ))
+    if directory_hits:
+        mappings.append((
+            "Directory hits",
+            [
+                "Public path exposure review",
+                "Content and asset publishing governance",
+                "Web server hardening",
+            ],
+        ))
+    return mappings
+
 def _report_evidence_groups(report_data):
     scan_data = report_data.get("scan_data", {}) or {}
     general = scan_data.get("general", {}) or {}
@@ -1717,6 +1793,7 @@ def _build_html_report(report_data):
         findings_rows.append(["Low", "Security header hardening opportunity", f"The response did not include: {', '.join(missing_headers)}. These are treated as hardening recommendations, not as evidence of an exploited vulnerability."])
 
     remediation_items = _report_remediation_items(scan_data, findings)
+    compliance_mappings = _report_compliance_mappings(scan_data)
 
     html_template = """<!doctype html>
 <html lang="en">
@@ -1789,6 +1866,12 @@ code { background: #f8fafc; padding: 0.1rem 0.3rem; }
 </section>
 
 <section>
+<h2>Compliance Mapping</h2>
+<p>Potentially relevant control themes are listed below. Mapping is indicative and requires auditor validation. This is not a formal compliance determination.</p>
+__COMPLIANCE_MAPPING__
+</section>
+
+<section>
 <h2>Findings Summary</h2>
 __FINDINGS_TABLE__
 </section>
@@ -1834,6 +1917,15 @@ __SPIDER_TABLE__
         + "</ul>"
         for title, items in _report_evidence_groups(report_data)
     )
+    if compliance_mappings:
+        compliance_html = "".join(
+            f"<h3>{_escape_text(title)}</h3><ul>"
+            + "".join(f"<li>{_escape_text(item)}</li>" for item in items)
+            + "</ul>"
+            for title, items in compliance_mappings
+        )
+    else:
+        compliance_html = "<p class='muted'>No compliance mappings were generated from the evidence collected in this scan.</p>"
     remediation_html = "".join(f"<li>{_escape_text(item)}</li>" for item in remediation_items)
     findings_table = _build_table(["Severity", "Title", "Detail"], findings_rows)
     ports_table = _build_table(["Port", "Protocol", "State", "Service"], [[str(p.get("port", "-")), str(p.get("protocol", "-")), str(p.get("state", "-")), str(p.get("service", "-"))] for p in nmap_ports if isinstance(p, dict)])
@@ -1861,6 +1953,7 @@ __SPIDER_TABLE__
     report_html = report_html.replace("__BUSINESS_IMPACT__", _escape_text(business_impact["impact"]))
     report_html = report_html.replace("__REMEDIATION_PRIORITY__", _escape_text(business_impact["priority"]))
     report_html = report_html.replace("__BUSINESS_EXPLANATION__", _escape_text(business_impact["explanation"]))
+    report_html = report_html.replace("__COMPLIANCE_MAPPING__", compliance_html)
     report_html = report_html.replace("__FINDINGS_TABLE__", findings_table)
     report_html = report_html.replace("__EVIDENCE_ITEMS__", evidence_html)
     report_html = report_html.replace("__PORTS_TABLE__", ports_table)
@@ -1974,6 +2067,7 @@ def _build_markdown_report(report_data):
         finding_lines.append(f"- [Low] Security header hardening opportunity: the response did not include {', '.join(missing_headers)}. This is a hardening recommendation, not evidence of an exploited vulnerability.")
 
     remediation_items = [f"- {item}" for item in _report_remediation_items(scan_data, findings)]
+    compliance_mappings = _report_compliance_mappings(scan_data)
     evidence_lines = []
     for group_title, group_items in _report_evidence_groups(report_data):
         evidence_lines.append(f"### {group_title}")
@@ -2022,6 +2116,19 @@ def _build_markdown_report(report_data):
     parts.append(f"- Remediation priority: {business_impact['priority']}")
     parts.append(f"- Explanation: {business_impact['explanation']}")
     parts.append("")
+    parts.append("## Compliance Mapping")
+    parts.append("")
+    parts.append("Potentially relevant control themes are listed below. Mapping is indicative and requires auditor validation. This is not a formal compliance determination.")
+    parts.append("")
+    if compliance_mappings:
+        for title, items in compliance_mappings:
+            parts.append(f"### {title}")
+            parts.append("")
+            parts.extend(f"- {item}" for item in items)
+            parts.append("")
+    else:
+        parts.append("No compliance mappings were generated from the evidence collected in this scan.")
+        parts.append("")
     parts.append("## Findings Summary")
     parts.append("")
     parts.extend(finding_lines)
@@ -2079,6 +2186,7 @@ def _build_txt_report(report_data):
     if missing_headers:
         sev_counts["low"] += 1
     business_impact = _report_business_impact(sev_counts)
+    compliance_mappings = _report_compliance_mappings(scan_data)
 
     lines = []
     lines.append("AisoSec Audit")
@@ -2122,6 +2230,18 @@ def _build_txt_report(report_data):
     lines.append(f"Remediation priority: {business_impact['priority']}")
     lines.append(f"Explanation: {business_impact['explanation']}")
     lines.append("")
+    lines.append("Compliance Mapping")
+    lines.append("------------------")
+    lines.append("Potentially relevant control themes are listed below. Mapping is indicative and requires auditor validation. This is not a formal compliance determination.")
+    if compliance_mappings:
+        for title, items in compliance_mappings:
+            lines.append(title)
+            for item in items:
+                lines.append(f"- {item}")
+            lines.append("")
+    else:
+        lines.append("No compliance mappings were generated from the evidence collected in this scan.")
+        lines.append("")
     lines.append("Findings Summary")
     lines.append("----------------")
     for item in findings:
