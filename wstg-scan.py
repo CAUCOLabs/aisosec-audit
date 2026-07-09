@@ -5138,13 +5138,13 @@ def _run_wpscan_json(cmd, request_timeout=None):
     return rc, stdout_text
 
 def _wpscan_was_interrupted(return_code):
-    return return_status is None or return_status in (130, -2, -15)
+    return return_code is None or return_code in (130, -2, -15)
 
 def run_wpscan_enumeration(target, session, wpscan_path, api_token=None, threads=5, request_timeout=15,
-                           enum_flags="u,ap,at", label="WPScan enumeracion"):
+                           enum_flags="u,ap,at", label="WPScan enumeration"):
     tmp_fd, tmp_path = tempfile.mkstemp(suffix=".json", prefix="wpscan_enum_")
     os.close(tmp_fd)
-    # Usar enumerate explicito para evitar ambiguedades con versiones de WPScan
+    # Use explicit enumeration to avoid ambiguity across WPScan versions
     enum_flags = str(enum_flags or "u,ap,at").strip() or "u,ap,at"
     base_cmd = [
         wpscan_path,
