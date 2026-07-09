@@ -1,0 +1,17 @@
+venv/
+.env
+__pycache__/
+*.pyc
+
+reports/
+dist/
+AisoSec Audit.app/
+
+.DS_Store
+*.log
+spider_output.txt
+
+*.bak
+*.backup
+*.bak-*
+wstg-scan.py.bak-*
