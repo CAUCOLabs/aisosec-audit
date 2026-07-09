@@ -1466,6 +1466,49 @@ def _report_methodology_text(scan_data):
         methods.append("available target metadata review")
     return "The assessment included " + ", ".join(methods[:-1]) + (", and " if len(methods) > 1 else "") + methods[-1] + ". Findings were recorded from collected evidence without introducing additional claims."
 
+def _report_business_impact(sev_counts):
+    critical = sev_counts.get("critical", 0)
+    high = sev_counts.get("high", 0)
+    medium = sev_counts.get("medium", 0)
+    low = sev_counts.get("low", 0)
+    info = sev_counts.get("info", 0)
+    total = critical + high + medium + low + info
+    if critical or high:
+        return {
+            "impact": "High",
+            "priority": "Immediate remediation",
+            "explanation": "The assessment identified high-impact findings that may create material business exposure. These items should be prioritized for remediation and validated after corrective action.",
+        }
+    if medium:
+        return {
+            "impact": "Medium",
+            "priority": "Planned remediation",
+            "explanation": "The assessment identified moderate-risk findings. These should be addressed through planned remediation to reduce exposure and prevent escalation.",
+        }
+    if low:
+        return {
+            "impact": "Low",
+            "priority": "Recommended hardening",
+            "explanation": "The assessment identified low-risk hardening opportunities. These do not indicate confirmed exploitation, but addressing them can reduce future exposure and improve security posture.",
+        }
+    if info:
+        return {
+            "impact": "Informational",
+            "priority": "Review and document",
+            "explanation": "The assessment identified informational observations. These should be reviewed and documented to confirm that the exposed information or behavior is expected.",
+        }
+    if total == 0:
+        return {
+            "impact": "No material exposure identified",
+            "priority": "Continue monitoring",
+            "explanation": "The assessment did not identify material exposure from the collected evidence. Continue routine monitoring and periodic review.",
+        }
+    return {
+        "impact": "Informational",
+        "priority": "Review and document",
+        "explanation": "The assessment identified observations that should be reviewed and documented.",
+    }
+
 def _report_evidence_groups(report_data):
     scan_data = report_data.get("scan_data", {}) or {}
     general = scan_data.get("general", {}) or {}
@@ -1640,6 +1683,7 @@ def _build_html_report(report_data):
     else:
         overall_risk = "Low"
         overall_risk_text = "The observed findings are mostly informational or low-risk hardening items."
+    business_impact = _report_business_impact(sev_counts)
 
     auth_status = "Authenticated assessment" if AUTHENTICATED else "Unauthenticated assessment"
     auth_note = "This report documents an authorized security assessment for the stated target."
@@ -1738,6 +1782,13 @@ code { background: #f8fafc; padding: 0.1rem 0.3rem; }
 </section>
 
 <section>
+<h2>Business Impact</h2>
+<p><strong>Business impact:</strong> __BUSINESS_IMPACT__</p>
+<p><strong>Remediation priority:</strong> __REMEDIATION_PRIORITY__</p>
+<p>__BUSINESS_EXPLANATION__</p>
+</section>
+
+<section>
 <h2>Findings Summary</h2>
 __FINDINGS_TABLE__
 </section>
@@ -1807,6 +1858,9 @@ __SPIDER_TABLE__
     report_html = report_html.replace("__MEDIUM__", _escape_text(str(sev_counts["medium"])))
     report_html = report_html.replace("__LOW__", _escape_text(str(sev_counts["low"])))
     report_html = report_html.replace("__INFO__", _escape_text(str(sev_counts["info"])))
+    report_html = report_html.replace("__BUSINESS_IMPACT__", _escape_text(business_impact["impact"]))
+    report_html = report_html.replace("__REMEDIATION_PRIORITY__", _escape_text(business_impact["priority"]))
+    report_html = report_html.replace("__BUSINESS_EXPLANATION__", _escape_text(business_impact["explanation"]))
     report_html = report_html.replace("__FINDINGS_TABLE__", findings_table)
     report_html = report_html.replace("__EVIDENCE_ITEMS__", evidence_html)
     report_html = report_html.replace("__PORTS_TABLE__", ports_table)
@@ -1887,6 +1941,7 @@ def _build_markdown_report(report_data):
     else:
         risk_summary = "Low"
         risk_text = "The observed findings are mostly informational or low-risk hardening items."
+    business_impact = _report_business_impact(sev_counts)
 
     auth_summary = "Authenticated assessment" if AUTHENTICATED else "Unauthenticated assessment"
 
@@ -1916,7 +1971,7 @@ def _build_markdown_report(report_data):
             if _normalize_severity(n.get("severity") or "info") != "info":
                 finding_lines.append(f"- [{_severity_label(n.get('severity') or 'info')}] {n.get('template_id', '-')} - {n.get('name', '-')} ({n.get('url', '-')})")
     if missing_headers:
-        finding_lines.append(f"- [Low] Security header hardening opportunity: the response did not include {', '.join(missing_headers)}.")
+        finding_lines.append(f"- [Low] Security header hardening opportunity: the response did not include {', '.join(missing_headers)}. This is a hardening recommendation, not evidence of an exploited vulnerability.")
 
     remediation_items = [f"- {item}" for item in _report_remediation_items(scan_data, findings)]
     evidence_lines = []
@@ -1960,6 +2015,12 @@ def _build_markdown_report(report_data):
     parts.append(f"- Medium: {sev_counts['medium']}")
     parts.append(f"- Low: {sev_counts['low']}")
     parts.append(f"- Informational: {sev_counts['info']}")
+    parts.append("")
+    parts.append("## Business Impact")
+    parts.append("")
+    parts.append(f"- Business impact: {business_impact['impact']}")
+    parts.append(f"- Remediation priority: {business_impact['priority']}")
+    parts.append(f"- Explanation: {business_impact['explanation']}")
     parts.append("")
     parts.append("## Findings Summary")
     parts.append("")
@@ -2017,6 +2078,7 @@ def _build_txt_report(report_data):
         sev_counts[sev] += 1
     if missing_headers:
         sev_counts["low"] += 1
+    business_impact = _report_business_impact(sev_counts)
 
     lines = []
     lines.append("AisoSec Audit")
@@ -2054,6 +2116,12 @@ def _build_txt_report(report_data):
     lines.append(f"Low: {sev_counts['low']}")
     lines.append(f"Informational: {sev_counts['info']}")
     lines.append("")
+    lines.append("Business Impact")
+    lines.append("---------------")
+    lines.append(f"Business impact: {business_impact['impact']}")
+    lines.append(f"Remediation priority: {business_impact['priority']}")
+    lines.append(f"Explanation: {business_impact['explanation']}")
+    lines.append("")
     lines.append("Findings Summary")
     lines.append("----------------")
     for item in findings:
@@ -2065,7 +2133,7 @@ def _build_txt_report(report_data):
         else:
             lines.append(f"- {item}")
     if missing_headers:
-        lines.append(f"- [LOW] Security header hardening opportunity: {', '.join(missing_headers)}")
+        lines.append(f"- [LOW] Security header hardening opportunity: {', '.join(missing_headers)}. This is a hardening recommendation, not evidence of an exploited vulnerability.")
     if nuclei_findings:
         lines.append("- [INFO] Informational exposure / technology discovery: Nuclei informational findings were grouped as discovery observations.")
     lines.append("")
