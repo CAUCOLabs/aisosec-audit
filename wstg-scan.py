@@ -1433,6 +1433,39 @@ def _report_missing_headers(headers):
     headers = headers or {}
     return [h for h in _report_required_headers() if not (headers.get(h) or headers.get(h.lower()))]
 
+def _report_source_code_executed(src_code):
+    if not isinstance(src_code, dict) or not src_code:
+        return False
+    return bool(
+        src_code.get("findings")
+        or src_code.get("pages_analyzed")
+        or src_code.get("assets_analyzed")
+        or src_code.get("summary")
+        or src_code.get("sample_urls")
+    )
+
+def _report_methodology_text(scan_data):
+    general = scan_data.get("general", {}) or {}
+    methods = []
+    if general:
+        methods.append("HTTP metadata and response inspection")
+    if (scan_data.get("nmap", {}) or {}).get("ports"):
+        methods.append("network service review")
+    if scan_data.get("directory_hits"):
+        methods.append("directory discovery")
+    spider = scan_data.get("spider", {}) or {}
+    if spider.get("sample_urls") or spider.get("total_urls"):
+        methods.append("spidering")
+    if _report_source_code_executed(scan_data.get("source_code_analysis", {}) or {}):
+        methods.append("source code review")
+    if scan_data.get("nuclei_findings"):
+        methods.append("targeted Nuclei scanning")
+    if scan_data.get("api_endpoints"):
+        methods.append("API endpoint discovery")
+    if not methods:
+        methods.append("available target metadata review")
+    return "The assessment included " + ", ".join(methods[:-1]) + (", and " if len(methods) > 1 else "") + methods[-1] + ". Findings were recorded from collected evidence without introducing additional claims."
+
 def _report_evidence_groups(report_data):
     scan_data = report_data.get("scan_data", {}) or {}
     general = scan_data.get("general", {}) or {}
@@ -1475,7 +1508,11 @@ def _report_evidence_groups(report_data):
             [
                 f"{(f.get('severity') or 'low').title()}: {f.get('type', '-')} - {f.get('value', '-')} ({f.get('url', '-')})"
                 for f in src_findings[:20] if isinstance(f, dict)
-            ] or [f"No source code findings recorded. Pages analyzed: {src_code.get('pages_analyzed', 0)}; assets analyzed: {src_code.get('assets_analyzed', 0)}."]
+            ] or (
+                [f"Source code analysis was executed and no findings were recorded. Pages analyzed: {src_code.get('pages_analyzed', 0)}; assets analyzed: {src_code.get('assets_analyzed', 0)}."]
+                if _report_source_code_executed(src_code)
+                else ["Source code analysis was not executed or no source code evidence was recorded."]
+            )
         )),
         ("Spidered URLs", (
             [f"Total URLs: {spider.get('total_urls', len(spider.get('sample_urls', []) or []))}"] +
@@ -1592,6 +1629,8 @@ def _build_html_report(report_data):
     for item in src_findings:
         sev = _normalize_severity(item.get("severity") or "low")
         sev_counts[sev] += 1
+    if missing_headers:
+        sev_counts["low"] += 1
     if sev_counts["critical"] or sev_counts["high"]:
         overall_risk = "High"
         overall_risk_text = "The evidence indicates material exposure that should be remediated promptly."
@@ -1631,8 +1670,7 @@ def _build_html_report(report_data):
             if _normalize_severity(n.get("severity") or "info") != "info":
                 findings_rows.append([_severity_label(n.get("severity") or "info"), n.get("name") or n.get("template_id") or "Nuclei finding", n.get("url") or ""])
     if missing_headers:
-        severity = "Low" if not any(sev_counts[k] for k in ("critical", "high", "medium")) else "Medium"
-        findings_rows.append([severity, "Security header hardening opportunity", f"The response did not include: {', '.join(missing_headers)}. These are treated as hardening recommendations unless higher-severity evidence is present."])
+        findings_rows.append(["Low", "Security header hardening opportunity", f"The response did not include: {', '.join(missing_headers)}. These are treated as hardening recommendations, not as evidence of an exploited vulnerability."])
 
     remediation_items = _report_remediation_items(scan_data, findings)
 
@@ -1684,7 +1722,7 @@ code { background: #f8fafc; padding: 0.1rem 0.3rem; }
 
 <section>
 <h2>Methodology</h2>
-<p>The assessment combined passive review, network reconnaissance, HTTP inspection, directory discovery, Spidering, source code review, and targeted scanning. Findings were recorded from the collected evidence without introducing additional intrusive activity.</p>
+<p>__METHODOLOGY_TEXT__</p>
 </section>
 
 <section>
@@ -1763,6 +1801,7 @@ __SPIDER_TABLE__
     report_html = report_html.replace("__RISK_TEXT__", _escape_text(overall_risk_text))
     report_html = report_html.replace("__SCOPE_ITEMS__", scope_html)
     report_html = report_html.replace("__AUTHENTICATED_TEXT__", _escape_text("authenticated" if AUTHENTICATED else "unauthenticated"))
+    report_html = report_html.replace("__METHODOLOGY_TEXT__", _escape_text(_report_methodology_text(scan_data)))
     report_html = report_html.replace("__CRITICAL__", _escape_text(str(sev_counts["critical"])))
     report_html = report_html.replace("__HIGH__", _escape_text(str(sev_counts["high"])))
     report_html = report_html.replace("__MEDIUM__", _escape_text(str(sev_counts["medium"])))
@@ -1836,6 +1875,9 @@ def _build_markdown_report(report_data):
     for item in src_findings:
         sev = _normalize_severity(item.get("severity") or "low")
         sev_counts[sev] += 1
+    missing_headers = _report_missing_headers(headers)
+    if missing_headers:
+        sev_counts["low"] += 1
     if sev_counts["critical"] or sev_counts["high"]:
         risk_summary = "High"
         risk_text = "The evidence indicates material exposure that should be remediated promptly."
@@ -1846,7 +1888,6 @@ def _build_markdown_report(report_data):
         risk_summary = "Low"
         risk_text = "The observed findings are mostly informational or low-risk hardening items."
 
-    missing_headers = _report_missing_headers(headers)
     auth_summary = "Authenticated assessment" if AUTHENTICATED else "Unauthenticated assessment"
 
     scope_lines = [
@@ -1910,7 +1951,7 @@ def _build_markdown_report(report_data):
     parts.append("")
     parts.append("## Methodology")
     parts.append("")
-    parts.append("The assessment combined passive review, network reconnaissance, HTTP inspection, directory discovery, Spidering, source code review, and targeted scanning. Findings were recorded from the collected evidence without introducing additional intrusive activity.")
+    parts.append(_report_methodology_text(scan_data))
     parts.append("")
     parts.append("## Risk Overview")
     parts.append("")
@@ -1974,6 +2015,8 @@ def _build_txt_report(report_data):
     for item in src_findings:
         sev = _normalize_severity(item.get("severity") or "low")
         sev_counts[sev] += 1
+    if missing_headers:
+        sev_counts["low"] += 1
 
     lines = []
     lines.append("AisoSec Audit")
@@ -2001,7 +2044,7 @@ def _build_txt_report(report_data):
     lines.append("")
     lines.append("Methodology")
     lines.append("-----------")
-    lines.append("Passive review, network reconnaissance, HTTP inspection, directory discovery, Spidering, source code review, and targeted scanning were used.")
+    lines.append(_report_methodology_text(scan_data))
     lines.append("")
     lines.append("Risk Overview")
     lines.append("-------------")
