@@ -1,5 +1,11 @@
 # AisoSec Audit
 
+## Architecture Vision
+
+![AisoSec Audit architecture](docs/aisosec-diagram.png)
+
+AisoSec Audit is evolving from a security assessment tool into an AI Compliance & Security Audit Platform focused on evidence, risk analysis, compliance mapping, audit-ready reporting and continuous trust infrastructure.
+
 AisoSec Audit is a macOS-friendly security assessment and reporting tool focused on authorized external web security reviews.
 
 It helps identify public-facing exposure, weak configurations, security headers, exposed assets, source code patterns, and technical findings that can be transformed into clear audit-ready reports.
