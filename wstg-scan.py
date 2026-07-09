@@ -5129,7 +5129,7 @@ def _run_wpscan_json(cmd, request_timeout=None):
     print_info("Generating WPScan JSON to build the final summary...")
     rc, stdout_text = _capture_command_output(cmd, interrupt_label="wpscan")
     if rc == 4:
-        print_warning("WPScan returned code 4 al generar JSON; retrying with more tolerant options.")
+        print_warning("WPScan returned code 4 while generating JSON; retrying with more tolerant options.")
         retry_cmd = _wpscan_retry_command(cmd, request_timeout=request_timeout)
         rc2, out2 = _capture_command_output(retry_cmd, interrupt_label="wpscan")
         if out2:
@@ -5583,7 +5583,7 @@ def run_wpscan_user_enumeration_if_wordpress(target, session, existing_users=Non
         threads=max(5, THREADS),
         request_timeout=max(15, DEFAULT_TIMEOUT),
         enum_flags="u",
-        label="WPScan enumeracion de users",
+        label="WPScan user enumeration",
     )
     SCAN_DATA["wordpress"] = scan
     if scan.get("interrupted"):
