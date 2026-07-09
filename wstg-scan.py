@@ -1410,6 +1410,127 @@ def _finding_text(finding):
         return f"[{cat}] {name}: {detail}" if detail else f"[{cat}] {name}"
     return str(finding)
 
+def _report_required_headers():
+    return [
+        "Strict-Transport-Security",
+        "Content-Security-Policy",
+        "X-Frame-Options",
+        "X-Content-Type-Options",
+        "Referrer-Policy",
+        "Permissions-Policy",
+    ]
+
+def _report_technologies_text(technologies):
+    names = []
+    for item in technologies or []:
+        if isinstance(item, dict):
+            names.append(str(item.get("name", item)))
+        else:
+            names.append(str(item))
+    return ", ".join(names) if names else "None recorded"
+
+def _report_missing_headers(headers):
+    headers = headers or {}
+    return [h for h in _report_required_headers() if not (headers.get(h) or headers.get(h.lower()))]
+
+def _report_evidence_groups(report_data):
+    scan_data = report_data.get("scan_data", {}) or {}
+    general = scan_data.get("general", {}) or {}
+    headers = general.get("headers") or {}
+    technologies = general.get("technologies", []) or []
+    nmap_ports = (scan_data.get("nmap", {}) or {}).get("ports", []) or []
+    nuclei_findings = scan_data.get("nuclei_findings", []) or []
+    src_code = scan_data.get("source_code_analysis", {}) or {}
+    src_findings = src_code.get("findings", []) or []
+    spider = scan_data.get("spider", {}) or {}
+    directory_hits = scan_data.get("directory_hits", []) or []
+    api_endpoints = scan_data.get("api_endpoints", []) or []
+    missing_headers = _report_missing_headers(headers)
+
+    groups = [
+        ("Target metadata", [
+            f"Target: {report_data.get('target', '-')}",
+            f"Timestamp: {report_data.get('date', '-')}",
+            f"Assessment type: {'Authenticated assessment' if AUTHENTICATED else 'Unauthenticated assessment'}",
+            f"HTTP status: {general.get('status_code', '-')}",
+        ]),
+        ("HTTP headers", (
+            [f"{name}: {value}" for name, value in list(headers.items())[:20]]
+            if headers else ["No headers recorded."]
+        ) + ([f"Missing recommended headers: {', '.join(missing_headers)}"] if missing_headers else [])),
+        ("Technologies", [_report_technologies_text(technologies)]),
+        ("Open ports", (
+            [
+                f"{p.get('port', '-')}/{p.get('protocol', '-')} {p.get('state', '-')} {p.get('service', '-')}"
+                for p in nmap_ports[:20] if isinstance(p, dict)
+            ] or ["None recorded."]
+        )),
+        ("Nuclei findings", (
+            [
+                f"{(n.get('severity') or 'info').title()}: {n.get('name') or n.get('template_id') or 'Nuclei finding'} ({n.get('url', '-')})"
+                for n in nuclei_findings[:20] if isinstance(n, dict)
+            ] or ["None recorded."]
+        )),
+        ("Source code findings", (
+            [
+                f"{(f.get('severity') or 'low').title()}: {f.get('type', '-')} - {f.get('value', '-')} ({f.get('url', '-')})"
+                for f in src_findings[:20] if isinstance(f, dict)
+            ] or [f"No source code findings recorded. Pages analyzed: {src_code.get('pages_analyzed', 0)}; assets analyzed: {src_code.get('assets_analyzed', 0)}."]
+        )),
+        ("Spidered URLs", (
+            [f"Total URLs: {spider.get('total_urls', len(spider.get('sample_urls', []) or []))}"] +
+            ([str(u) for u in (spider.get("sample_urls", []) or [])[:20]] if spider.get("sample_urls") else ["No spidered URLs recorded."])
+        )),
+        ("Directory hits", (
+            [
+                f"HTTP {h.get('status', '-')} {h.get('url', '-')} (size: {h.get('size', '-')})"
+                for h in directory_hits[:20] if isinstance(h, dict)
+            ] or ["None recorded."]
+        )),
+        ("API endpoints", (
+            [
+                f"HTTP {ep.get('status', '-')} {ep.get('endpoint') or ep.get('url', '-')} ({ep.get('content_type', '-')})"
+                for ep in api_endpoints[:20] if isinstance(ep, dict)
+            ] or ["None recorded."]
+        )),
+    ]
+    return groups
+
+def _report_remediation_items(scan_data, findings=None):
+    general = scan_data.get("general", {}) or {}
+    headers = general.get("headers") or {}
+    nmap_ports = (scan_data.get("nmap", {}) or {}).get("ports", []) or []
+    nuclei_findings = scan_data.get("nuclei_findings", []) or []
+    src_findings = (scan_data.get("source_code_analysis", {}) or {}).get("findings", []) or []
+    api_endpoints = scan_data.get("api_endpoints", []) or []
+    directory_hits = scan_data.get("directory_hits", []) or []
+    emails = scan_data.get("emails", []) or []
+    wordpress = scan_data.get("wordpress", {}) or {}
+    missing_headers = _report_missing_headers(headers)
+
+    items = []
+    if missing_headers:
+        items.append("Harden HTTP security headers by adding the missing recommended headers after validating application compatibility: " + ", ".join(missing_headers) + ".")
+    if emails:
+        items.append("Reduce public exposure of email addresses or move contact handling to a controlled contact flow that limits harvesting and abuse.")
+    if nmap_ports:
+        items.append("Review externally exposed services and confirm each open port is required, patched, monitored, and restricted to trusted sources where possible.")
+    if any((n.get("severity") or "info").strip().lower() == "info" for n in nuclei_findings if isinstance(n, dict)):
+        items.append("Review Nuclei informational findings as exposure and fingerprinting observations; validate intended visibility without treating them as confirmed vulnerabilities.")
+    if api_endpoints:
+        items.append("Review discovered API endpoints for authentication, authorization, input validation, and rate limits.")
+    if directory_hits:
+        items.append("Verify whether discovered directory paths should be public and restrict, remove, or document any path that is not intended for external access.")
+    if src_findings:
+        items.append("Remove or rotate exposed credentials, tokens, or sensitive patterns discovered in source code or client-side assets.")
+    if wordpress.get("detected"):
+        items.append("Patch WordPress core, plugins, and themes to current supported versions and remove unused components.")
+    if any(isinstance(item, dict) and (item.get("severity") or "").lower() in {"critical", "high"} for item in findings or []):
+        items.append("Prioritize confirmed high-impact findings for remediation and verify fixes in a controlled test environment.")
+    if not items:
+        items.append("Continue routine monitoring and review the deployment configuration on a regular cadence.")
+    return items
+
 def _build_html_report(report_data):
     """Generate a professional HTML report for the collected scan evidence."""
     scan_data = report_data.get("scan_data", {}) or {}
@@ -1433,15 +1554,8 @@ def _build_html_report(report_data):
     creds = scan_data.get("bruteforce_credentials", []) or []
     wordpress = scan_data.get("wordpress", {}) or {}
     active_directory = scan_data.get("active_directory", {}) or {}
-    required_headers = [
-        "Strict-Transport-Security",
-        "Content-Security-Policy",
-        "X-Frame-Options",
-        "X-Content-Type-Options",
-        "Referrer-Policy",
-        "Permissions-Policy",
-    ]
-    missing_headers = [h for h in required_headers if not (headers.get(h) or headers.get(h.lower()))]
+    required_headers = _report_required_headers()
+    missing_headers = _report_missing_headers(headers)
 
     def _normalize_severity(value):
         text = (value or "info").strip().lower()
@@ -1520,31 +1634,7 @@ def _build_html_report(report_data):
         severity = "Low" if not any(sev_counts[k] for k in ("critical", "high", "medium")) else "Medium"
         findings_rows.append([severity, "Security header hardening opportunity", f"The response did not include: {', '.join(missing_headers)}. These are treated as hardening recommendations unless higher-severity evidence is present."])
 
-    remediation_items = []
-    if missing_headers:
-        remediation_items.append("Implement the missing security headers with values appropriate for the application and deployment context.")
-    if sev_counts["critical"] or sev_counts["high"]:
-        remediation_items.append("Prioritize the highest-severity findings for remediation and verify the fixes in a controlled test environment.")
-    if api_endpoints or directory_hits:
-        remediation_items.append("Reduce public exposure by restricting access to administrative paths, debug endpoints, and unnecessary services.")
-    if src_findings:
-        remediation_items.append("Remove or rotate any exposed credentials, tokens, or sensitive patterns found in source code or client-side assets.")
-    if wordpress.get("detected"):
-        remediation_items.append("Patch the WordPress core, plugins, and themes to the current supported versions.")
-    if not remediation_items:
-        remediation_items.append("Continue routine monitoring and review the deployment configuration on a regular cadence.")
-
-    evidence_items = [
-        f"Target: {report_data.get('target', '-')}",
-        f"Timestamp: {report_data.get('date', '-')}",
-        f"HTTP status: {general.get('status_code', '-')}",
-        f"Technologies: {', '.join(str(t.get('name', t)) for t in technologies if isinstance(t, dict)) or 'None recorded'}",
-        f"Observed ports: {', '.join(str(p.get('port', '-')) for p in nmap_ports if isinstance(p, dict)) or 'None recorded'}",
-        f"Headers: {', '.join(headers.keys()) if headers else 'No headers recorded'}",
-        f"Nuclei findings: {len(nuclei_findings)}",
-        f"Source code findings: {len(src_findings)}",
-        f"Spidered URLs: {len(spider.get('sample_urls', []) or [])}",
-    ]
+    remediation_items = _report_remediation_items(scan_data, findings)
 
     html_template = """<!doctype html>
 <html lang="en">
@@ -1616,7 +1706,7 @@ __FINDINGS_TABLE__
 
 <section>
 <h2>Evidence</h2>
-<ul>__EVIDENCE_ITEMS__</ul>
+__EVIDENCE_ITEMS__
 <h3>Observed ports</h3>
 __PORTS_TABLE__
 <h3>Headers</h3>
@@ -1649,7 +1739,12 @@ __SPIDER_TABLE__
 </html>"""
 
     scope_html = "".join(f"<li>{_escape_text(item)}</li>" for item in scope_items)
-    evidence_html = "".join(f"<li>{_escape_text(item)}</li>" for item in evidence_items)
+    evidence_html = "".join(
+        f"<h3>{_escape_text(title)}</h3><ul>"
+        + "".join(f"<li>{_escape_text(item)}</li>" for item in items)
+        + "</ul>"
+        for title, items in _report_evidence_groups(report_data)
+    )
     remediation_html = "".join(f"<li>{_escape_text(item)}</li>" for item in remediation_items)
     findings_table = _build_table(["Severity", "Title", "Detail"], findings_rows)
     ports_table = _build_table(["Port", "Protocol", "State", "Service"], [[str(p.get("port", "-")), str(p.get("protocol", "-")), str(p.get("state", "-")), str(p.get("service", "-"))] for p in nmap_ports if isinstance(p, dict)])
@@ -1751,15 +1846,7 @@ def _build_markdown_report(report_data):
         risk_summary = "Low"
         risk_text = "The observed findings are mostly informational or low-risk hardening items."
 
-    required_headers = [
-        "Strict-Transport-Security",
-        "Content-Security-Policy",
-        "X-Frame-Options",
-        "X-Content-Type-Options",
-        "Referrer-Policy",
-        "Permissions-Policy",
-    ]
-    missing_headers = [h for h in required_headers if not (headers.get(h) or headers.get(h.lower()))]
+    missing_headers = _report_missing_headers(headers)
     auth_summary = "Authenticated assessment" if AUTHENTICATED else "Unauthenticated assessment"
 
     scope_lines = [
@@ -1790,31 +1877,13 @@ def _build_markdown_report(report_data):
     if missing_headers:
         finding_lines.append(f"- [Low] Security header hardening opportunity: the response did not include {', '.join(missing_headers)}.")
 
-    remediation_items = []
-    if missing_headers:
-        remediation_items.append("- Implement the missing security headers with values appropriate for the application and deployment environment.")
-    if sev_counts["critical"] or sev_counts["high"]:
-        remediation_items.append("- Prioritize the highest-severity findings and verify the remediations in a controlled test environment.")
-    if api_endpoints or directory_hits:
-        remediation_items.append("- Reduce public exposure by restricting access to administrative paths, debug endpoints, and unnecessary services.")
-    if src_findings:
-        remediation_items.append("- Remove or rotate any exposed credentials, tokens, or sensitive patterns discovered in source code or client-side assets.")
-    if wordpress.get("detected"):
-        remediation_items.append("- Patch the WordPress core, plugins, and themes to current supported versions.")
-    if not remediation_items:
-        remediation_items.append("- Continue routine monitoring and review the deployment configuration on a regular cadence.")
-
-    evidence_lines = [
-        f"- Target: {target}",
-        f"- Timestamp: {date}",
-        f"- HTTP status: {general.get('status_code', '-')}",
-        f"- Technologies: {', '.join(str(t.get('name', t)) for t in technologies if isinstance(t, dict)) or 'None recorded'}",
-        f"- Observed ports: {', '.join(str(p.get('port', '-')) for p in nmap_ports if isinstance(p, dict)) or 'None recorded'}",
-        f"- Headers: {', '.join(headers.keys()) if headers else 'No headers recorded'}",
-        f"- Nuclei findings: {len(nuclei_findings)}",
-        f"- Source code findings: {len(src_findings)}",
-        f"- Spidered sample URLs: {', '.join(spider.get('sample_urls', [])[:5]) if spider.get('sample_urls') else 'None recorded'}",
-    ]
+    remediation_items = [f"- {item}" for item in _report_remediation_items(scan_data, findings)]
+    evidence_lines = []
+    for group_title, group_items in _report_evidence_groups(report_data):
+        evidence_lines.append(f"### {group_title}")
+        evidence_lines.append("")
+        evidence_lines.extend(f"- {item}" for item in group_items)
+        evidence_lines.append("")
 
     parts = []
     parts.append("# AisoSec Audit")
@@ -1858,7 +1927,6 @@ def _build_markdown_report(report_data):
     parts.append("## Evidence")
     parts.append("")
     parts.extend(evidence_lines)
-    parts.append("")
     parts.append("## Remediation Plan")
     parts.append("")
     parts.extend(remediation_items)
@@ -1890,15 +1958,7 @@ def _build_txt_report(report_data):
     src_code = scan_data.get("source_code_analysis", {}) or {}
     src_findings = src_code.get("findings", []) or []
     spider = scan_data.get("spider", {}) or {}
-    required_headers = [
-        "Strict-Transport-Security",
-        "Content-Security-Policy",
-        "X-Frame-Options",
-        "X-Content-Type-Options",
-        "Referrer-Policy",
-        "Permissions-Policy",
-    ]
-    missing_headers = [h for h in required_headers if not (headers.get(h) or headers.get(h.lower()))]
+    missing_headers = _report_missing_headers(headers)
 
     def _normalize_severity(value):
         text = (value or "info").strip().lower()
@@ -1968,22 +2028,16 @@ def _build_txt_report(report_data):
     lines.append("")
     lines.append("Evidence")
     lines.append("--------")
-    lines.append(f"Target: {report_data.get('target', '-')}")
-    lines.append(f"Timestamp: {report_data.get('date', '-')}")
-    lines.append(f"HTTP status: {general.get('status_code', '-')}")
-    lines.append(f"Technologies: {', '.join(str(t.get('name', t)) for t in technologies if isinstance(t, dict)) or 'None recorded'}")
-    lines.append(f"Ports: {', '.join(str(p.get('port', '-')) for p in nmap_ports if isinstance(p, dict)) or 'None recorded'}")
-    lines.append(f"Headers: {', '.join(headers.keys()) if headers else 'No headers recorded'}")
-    lines.append(f"Nuclei findings: {len(nuclei_findings)}")
-    lines.append(f"Source code findings: {len(src_findings)}")
-    lines.append(f"Spidered sample URLs: {', '.join(spider.get('sample_urls', [])[:5]) if spider.get('sample_urls') else 'None recorded'}")
+    for group_title, group_items in _report_evidence_groups(report_data):
+        lines.append(group_title)
+        for item in group_items:
+            lines.append(f"- {item}")
+        lines.append("")
     lines.append("")
     lines.append("Remediation Plan")
     lines.append("----------------")
-    lines.append("- Implement missing security headers where appropriate.")
-    lines.append("- Prioritize the highest-severity issues and verify the remediations.")
-    lines.append("- Reduce public exposure to unnecessary services and paths.")
-    lines.append("- Remove or rotate any exposed credentials or secrets.")
+    for item in _report_remediation_items(scan_data, findings):
+        lines.append(f"- {item}")
     lines.append("")
     lines.append("Technical Appendix")
     lines.append("------------------")
