@@ -1525,6 +1525,8 @@ def _report_compliance_mappings(scan_data):
         mappings.append((
             "Missing recommended security headers",
             [
+                "AISOSEC-WEB-001 — HTTP Security Header Hardening",
+                "AISOSEC-CONFIG-001 — Secure Configuration Review",
                 "Web security hardening",
                 "Secure configuration management",
                 "OWASP secure headers guidance",
@@ -1538,6 +1540,8 @@ def _report_compliance_mappings(scan_data):
         mappings.append((
             "Exposed emails or source code findings",
             [
+                "AISOSEC-INFO-001 — Public Information Exposure Review",
+                "AISOSEC-DATA-001 — Data Minimization and Public Exposure Review",
                 "Information exposure management",
                 "Data minimization and public exposure review",
                 "OWASP information disclosure themes",
@@ -1549,6 +1553,8 @@ def _report_compliance_mappings(scan_data):
         mappings.append((
             "Open ports",
             [
+                "AISOSEC-NET-001 — External Service Exposure Review",
+                "AISOSEC-ASSET-001 — Asset Inventory and Service Ownership Review",
                 "External attack surface management",
                 "Network exposure review",
                 "Asset inventory and service ownership",
@@ -1559,6 +1565,8 @@ def _report_compliance_mappings(scan_data):
         mappings.append((
             "Nuclei informational findings",
             [
+                "AISOSEC-VM-001 — Vulnerability Management Triage",
+                "AISOSEC-TECH-001 — Technology Exposure Inventory",
                 "Technology exposure inventory",
                 "Vulnerability management triage",
                 "Security monitoring and review",
@@ -1568,6 +1576,8 @@ def _report_compliance_mappings(scan_data):
         mappings.append((
             "API endpoints",
             [
+                "AISOSEC-API-001 — API Authentication and Authorization Review",
+                "AISOSEC-API-002 — API Rate Limiting and Abuse Prevention Review",
                 "API governance",
                 "Authentication and authorization review",
                 "Rate limiting and abuse prevention",
@@ -1578,11 +1588,19 @@ def _report_compliance_mappings(scan_data):
         mappings.append((
             "Directory hits",
             [
+                "AISOSEC-WEB-002 — Public Path Exposure Review",
+                "AISOSEC-CONTENT-001 — Content Publishing Governance Review",
                 "Public path exposure review",
                 "Content and asset publishing governance",
                 "Web server hardening",
             ],
         ))
+    mappings.append((
+        "Auditor validation",
+        [
+            "AISOSEC-COMP-001 — Compliance Mapping Requires Auditor Validation",
+        ],
+    ))
     return mappings
 
 def _report_evidence_groups(report_data):
@@ -1867,7 +1885,7 @@ code { background: #f8fafc; padding: 0.1rem 0.3rem; }
 
 <section>
 <h2>Compliance Mapping</h2>
-<p>Potentially relevant control themes are listed below. Mapping is indicative and requires auditor validation. This is not a formal compliance determination.</p>
+<p>Potentially relevant control themes are listed below. Control mappings are indicative and require auditor validation. AisoSec control IDs are internal audit-support references, not certification results.</p>
 __COMPLIANCE_MAPPING__
 </section>
 
@@ -2118,7 +2136,7 @@ def _build_markdown_report(report_data):
     parts.append("")
     parts.append("## Compliance Mapping")
     parts.append("")
-    parts.append("Potentially relevant control themes are listed below. Mapping is indicative and requires auditor validation. This is not a formal compliance determination.")
+    parts.append("Potentially relevant control themes are listed below. Control mappings are indicative and require auditor validation. AisoSec control IDs are internal audit-support references, not certification results.")
     parts.append("")
     if compliance_mappings:
         for title, items in compliance_mappings:
@@ -2232,7 +2250,7 @@ def _build_txt_report(report_data):
     lines.append("")
     lines.append("Compliance Mapping")
     lines.append("------------------")
-    lines.append("Potentially relevant control themes are listed below. Mapping is indicative and requires auditor validation. This is not a formal compliance determination.")
+    lines.append("Potentially relevant control themes are listed below. Control mappings are indicative and require auditor validation. AisoSec control IDs are internal audit-support references, not certification results.")
     if compliance_mappings:
         for title, items in compliance_mappings:
             lines.append(title)
