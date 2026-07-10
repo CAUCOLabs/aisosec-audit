@@ -10,6 +10,10 @@ AisoSec Audit is a macOS-friendly security assessment and reporting tool focused
 
 It helps identify public-facing exposure, weak configurations, security headers, exposed assets, source code patterns, and technical findings that can be transformed into clear audit-ready reports.
 
+## Documentation
+
+- [AisoSec Control Library](docs/CONTROL_LIBRARY.md)
+
 ## Current capabilities
 
 - General information and enumeration
